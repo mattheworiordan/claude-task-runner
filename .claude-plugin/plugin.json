@@ -1,0 +1,10 @@
+{
+  "name": "colony",
+  "version": "1.0.0",
+  "description": "Decompose complex tasks into parallel sub-tasks with independent verification — like a colony of AI workers",
+  "author": {
+    "name": "Matthew O'Riordan",
+    "email": "matthew@oriordan.org"
+  },
+  "repository": "https://github.com/mattheworiordan/colony"
+}

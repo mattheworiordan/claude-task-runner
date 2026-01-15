@@ -19,15 +19,40 @@ Colony solves these problems by spawning specialized worker agents that execute 
 
 ## Installation
 
-```bash
-# Clone the repository
-git clone https://github.com/mattheworiordan/colony.git
+### Option 1: Install from Marketplace (Recommended)
 
-# Or install via Claude Code plugin manager (coming soon)
-claude plugins install colony
+```bash
+# In Claude Code, add the Colony marketplace and install
+/plugin marketplace add mattheworiordan/colony
+/plugin install colony
 ```
 
-After installation, restart Claude Code. The `/colony-*` commands will be available.
+### Option 2: Manual Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/mattheworiordan/colony.git ~/.claude/plugins/colony
+```
+
+After cloning, the plugin is automatically available. Restart Claude Code if it's already running.
+
+### Option 3: Project-Local Installation
+
+To use Colony in a specific project only:
+
+```bash
+# Clone into your project
+git clone https://github.com/mattheworiordan/colony.git .claude-plugins/colony
+
+# Run Claude Code with the plugin directory
+claude --plugin-dir .claude-plugins/colony
+```
+
+### Verify Installation
+
+After installation, run `/help` in Claude Code — you should see the `/colony-*` commands listed.
+
+**Community Registry**: Colony is also indexed at [claude-plugins.dev](https://claude-plugins.dev/), which automatically discovers Claude Code plugins on GitHub.
 
 ### Working Directory Convention
 
