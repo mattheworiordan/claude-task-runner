@@ -1,5 +1,5 @@
 ---
-name: tasks-run
+name: colony-run
 description: Execute tasks with smart parallelization and verification
 version: 1.0.0
 status: active
@@ -10,7 +10,7 @@ allowed-tools: Read, Write, Edit, Bash, Task, Grep, Glob, AskUserQuestion
 
 # Run Tasks
 
-Execute tasks from a task-runner project using sub-agents with verification.
+Execute tasks from a colony project using sub-agents with verification.
 
 ## Core Principles
 
@@ -23,7 +23,7 @@ Execute tasks from a task-runner project using sub-agents with verification.
 ## Step 1: Find Project
 
 ```bash
-ls -d .working/task-runner/*/ 2>/dev/null
+ls -d .working/colony/*/ 2>/dev/null
 ```
 
 If $ARGUMENTS specifies a project, use that.
@@ -43,14 +43,14 @@ Which project should I run?
 
 If no projects:
 ```
-No task-runner projects found. Use /tasks-plan to create one.
+No colony projects found. Use /colony-plan to create one.
 ```
 
 ## Step 2: Load State and Context
 
 ```
-Read: .working/task-runner/{project}/state.json
-Read: .working/task-runner/{project}/context.md
+Read: .working/colony/{project}/state.json
+Read: .working/colony/{project}/context.md
 ```
 
 **You are stateless. Re-read state.json before EVERY decision.**
@@ -81,7 +81,7 @@ Please either:
 • Stash them (git stash)
 • Discard them
 
-Then re-run /tasks-run.
+Then re-run /colony-run.
 ```
 
 **If clean, verify we're on the correct branch:**
@@ -251,7 +251,7 @@ REPEAT until all tasks complete/failed/blocked:
 
     b) Ensure logs directory exists:
        ```bash
-       mkdir -p .working/task-runner/{project}/logs
+       mkdir -p .working/colony/{project}/logs
        ```
 
     c) Build execution bundle:
@@ -259,9 +259,9 @@ REPEAT until all tasks complete/failed/blocked:
        - Read context.md
        - Read source files listed in task's "Files" section
 
-    d) Spawn task-executor sub-agent:
+    d) Spawn worker sub-agent:
 
-       Use the Task tool with subagent_type="task-executor":
+       Use the Task tool with subagent_type="worker":
 
        ```
        Task: Execute this task following the project context.
@@ -273,7 +273,7 @@ REPEAT until all tasks complete/failed/blocked:
        ## Logging Metadata
 
        - **Attempt:** {attempt_number} of max 3
-       - **Log Path:** .working/task-runner/{project}/logs/{task-id}_LOG.md
+       - **Log Path:** .working/colony/{project}/logs/{task-id}_LOG.md
        - **Start Time:** {current ISO timestamp}
 
        You MUST write an execution log to the log path above.
@@ -322,7 +322,7 @@ REPEAT until all tasks complete/failed/blocked:
 
     **If DONE:**
 
-    Spawn task-verifier sub-agent:
+    Spawn inspector sub-agent:
 
     ```
     Task: Verify this task was completed correctly.
@@ -334,7 +334,7 @@ REPEAT until all tasks complete/failed/blocked:
     ## Logging Metadata
 
     - **Attempt:** {attempt_number}
-    - **Log Path:** .working/task-runner/{project}/logs/{task-id}_LOG.md
+    - **Log Path:** .working/colony/{project}/logs/{task-id}_LOG.md
 
     You MUST append your verification results to the log above.
     See the Verification Logging section in your instructions.
@@ -342,7 +342,7 @@ REPEAT until all tasks complete/failed/blocked:
     ## Task to Verify
     {Content of tasks/T{NNN}.md}
 
-    ## Executor's Claim
+    ## Worker's Claim
     {The DONE response}
 
     ## Acceptance Criteria
@@ -378,14 +378,14 @@ REPEAT until all tasks complete/failed/blocked:
 
     1. **Verify log file exists:**
        ```bash
-       ls -la .working/task-runner/{project}/logs/{task-id}_LOG.md
+       ls -la .working/colony/{project}/logs/{task-id}_LOG.md
        ```
        - If missing → DO NOT mark complete, log error, retry task
 
     2. **For VISUAL tasks, verify screenshots exist:**
        ```bash
        # Count screenshots matching task prefix (stored with project)
-       ls -la .working/task-runner/{project}/screenshots/{IntegrationName}_*.png 2>/dev/null | wc -l
+       ls -la .working/colony/{project}/screenshots/{IntegrationName}_*.png 2>/dev/null | wc -l
        ```
        - Compare count to expected (from task file's screenshot list)
        - If fewer than expected → DO NOT mark complete, log which are missing
@@ -395,10 +395,10 @@ REPEAT until all tasks complete/failed/blocked:
        ⚠️ Artifact validation FAILED for {task-id}
 
        Missing artifacts:
-       - [ ] Log file: .working/task-runner/{project}/logs/{task-id}_LOG.md
+       - [ ] Log file: .working/colony/{project}/logs/{task-id}_LOG.md
        - [ ] Screenshots: Expected 10, found 2
 
-       The executor claimed DONE but didn't produce required outputs.
+       The worker claimed DONE but didn't produce required outputs.
        Retrying task...
        ```
        - Reset status to "pending"
@@ -413,10 +413,10 @@ REPEAT until all tasks complete/failed/blocked:
 
     **If PARTIAL:**
 
-    The executor completed some but not all acceptance criteria. This often
+    The worker completed some but not all acceptance criteria. This often
     happens when VISUAL: items couldn't be verified due to browser unavailability.
 
-    Still spawn verifier to check the completed portions:
+    Still spawn inspector to check the completed portions:
 
     ```
     Task: Verify the completed portions of this task.
@@ -428,30 +428,30 @@ REPEAT until all tasks complete/failed/blocked:
     ## Logging Metadata
 
     - **Attempt:** {attempt_number}
-    - **Log Path:** .working/task-runner/{project}/logs/{task-id}_LOG.md
+    - **Log Path:** .working/colony/{project}/logs/{task-id}_LOG.md
 
     ## Task to Verify
     {Content of tasks/T{NNN}.md}
 
-    ## Executor's PARTIAL Response
+    ## Worker's PARTIAL Response
     {The PARTIAL response - shows completed and not-completed items}
 
     ## Your Job
-    1. Verify the items the executor marked as completed
+    1. Verify the items the worker marked as completed
     2. Acknowledge the incomplete items
-    3. If executor couldn't do VISUAL: items, you should try with browser
+    3. If worker couldn't do VISUAL: items, you should try with browser
 
     ═══════════════════════════════════════════════════════════
     ```
 
-    After verifier returns:
-    - If verifier PASS (including completing VISUAL: items) → status = "complete"
-    - If verifier FAIL → check attempts, retry or escalate
-    - If verifier also couldn't complete VISUAL: → escalate to orchestrator
+    After inspector returns:
+    - If inspector PASS (including completing VISUAL: items) → status = "complete"
+    - If inspector FAIL → check attempts, retry or escalate
+    - If inspector also couldn't complete VISUAL: → escalate to orchestrator
 
     **Orchestrator handling of unverified VISUAL: items:**
 
-    If both executor and verifier couldn't verify VISUAL: items:
+    If both worker and inspector couldn't verify VISUAL: items:
     1. The orchestrator (you) should attempt browser verification directly
     2. If all VISUAL: items pass → mark task complete
     3. If any VISUAL: items fail → task needs fixes, retry
@@ -468,9 +468,9 @@ REPEAT until all tasks complete/failed/blocked:
     ⚠️ Task {task-id} has failed 3 times.
 
     **Last error:**
-    {latest failure reason from verifier or STUCK message}
+    {latest failure reason from inspector or STUCK message}
 
-    **Execution log:** .working/task-runner/{project}/logs/{task-id}_LOG.md
+    **Execution log:** .working/colony/{project}/logs/{task-id}_LOG.md
 
     Options:
     • "retry T{NNN}" - Try again (maybe after manual fix)
@@ -631,7 +631,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 
 ### Git Summary
 Not applicable - this was a research/documentation project.
-All outputs saved to `.working/task-runner/{project}/`.
+All outputs saved to `.working/colony/{project}/`.
 
 ### Parallelization Stats
 - Average batch size: {n} tasks
@@ -666,12 +666,12 @@ All outputs saved to `.working/task-runner/{project}/`.
 
 This is NOT optional. The user should never have to ask "where is the report?"
 
-Write to: `.working/task-runner/{project}/REPORT.md`
+Write to: `.working/colony/{project}/REPORT.md`
 
 ### Report Template
 
 ```markdown
-# Task Runner Report: {project-name}
+# Colony Report: {project-name}
 
 **Generated:** {ISO timestamp}
 **Branch:** {branch-name}
@@ -811,20 +811,20 @@ Write to: `.working/task-runner/{project}/REPORT.md`
 
 Confirm to user:
 ```
-📋 Report generated: .working/task-runner/{project}/REPORT.md
+📋 Report generated: .working/colony/{project}/REPORT.md
 
 Summary:
 - {X} tasks completed, {Y} with issues, {Z} blocked
 - {N} critical issues found
 - {M} follow-up actions recommended
 
-View full report: cat .working/task-runner/{project}/REPORT.md
+View full report: cat .working/colony/{project}/REPORT.md
 ```
 
 ## Recovery
 
 If interrupted:
-1. Re-run `/tasks-run`
+1. Re-run `/colony-run`
 2. Reads state.json
 3. Tasks "running" for >30 minutes reset to "pending"
 4. Continues from where it left off
@@ -849,7 +849,7 @@ If interrupted:
 ## Important Rules
 
 1. **NEVER skip verification** - every DONE must be verified
-2. **NEVER mark complete without PASS** - verifier must confirm
+2. **NEVER mark complete without PASS** - inspector must confirm
 3. **NEVER mark complete without artifacts** - log file MUST exist, screenshots MUST match count
 4. **Update state.json BEFORE spawning** - crash recovery
 5. **Re-read state.json every iteration** - you are stateless
@@ -858,15 +858,15 @@ If interrupted:
 8. **Check Git state before starting** - refuse if working tree dirty (only if `git.strategy` is `"active"`)
 9. **Follow commit strategy** - phase/task/end/manual as configured (only if `git.strategy` is `"active"`)
 10. **Record commits in state.json** - for recovery and summary (only if `git.strategy` is `"active"`)
-11. **Task runner is commit exception** - explicit permission via /tasks-run (only if `git.strategy` is `"active"`)
+11. **Task runner is commit exception** - explicit permission via /colony-run (only if `git.strategy` is `"active"`)
 
 ## Critical: Artifact Validation Is Non-Negotiable
 
 **The #1 failure mode is agents claiming DONE without producing artifacts.**
 
 You MUST run artifact validation (Step 5.6a) for EVERY task:
-- Check log file exists: `ls -la .working/task-runner/{project}/logs/{task-id}_LOG.md`
-- Check screenshots exist (for VISUAL tasks): `ls .working/task-runner/{project}/screenshots/{prefix}_*.png`
+- Check log file exists: `ls -la .working/colony/{project}/logs/{task-id}_LOG.md`
+- Check screenshots exist (for VISUAL tasks): `ls .working/colony/{project}/screenshots/{prefix}_*.png`
 
 If artifacts are missing:
 - DO NOT mark complete

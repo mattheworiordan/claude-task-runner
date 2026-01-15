@@ -1,55 +1,56 @@
 {
-  "name": "claude-task-runner",
+  "name": "colony",
   "version": "1.0.0",
-  "description": "Decompose complex tasks into executable sub-tasks with parallel execution, independent verification, and comprehensive reporting",
+  "description": "Decompose complex tasks into parallel sub-tasks with independent verification - like a colony of AI workers",
   "author": "Matthew O'Riordan",
   "license": "MIT",
-  "repository": "https://github.com/mattheworiordan/claude-task-runner",
+  "repository": "https://github.com/mattheworiordan/colony",
   "keywords": [
-    "task-runner",
+    "colony",
     "task-decomposition",
     "parallel-execution",
     "verification",
     "autonomous",
-    "planning"
+    "planning",
+    "sub-agents"
   ],
   "commands": [
     {
-      "name": "tasks-plan",
+      "name": "colony-plan",
       "description": "Plan tasks from a brief - interactive task decomposition",
-      "file": "commands/tasks-plan.md"
+      "file": "commands/colony-plan.md"
     },
     {
-      "name": "tasks-run",
+      "name": "colony-run",
       "description": "Execute tasks with smart parallelization and verification",
-      "file": "commands/tasks-run.md"
+      "file": "commands/colony-run.md"
     },
     {
-      "name": "tasks-status",
-      "description": "Show detailed status of a task-runner project",
-      "file": "commands/tasks-status.md"
+      "name": "colony-status",
+      "description": "Show detailed status of a colony project",
+      "file": "commands/colony-status.md"
     },
     {
-      "name": "tasks-projects",
-      "description": "List all task-runner projects with summary status",
-      "file": "commands/tasks-projects.md"
+      "name": "colony-projects",
+      "description": "List all colony projects with summary status",
+      "file": "commands/colony-projects.md"
     },
     {
-      "name": "tasks-quick",
+      "name": "colony-quick",
       "description": "Quick task execution from a simple prompt - auto-generates brief and tasks",
-      "file": "commands/tasks-quick.md"
+      "file": "commands/colony-quick.md"
     }
   ],
   "agents": [
     {
-      "name": "task-executor",
+      "name": "worker",
       "description": "Execute a single task in isolation. Returns DONE, PARTIAL, or STUCK.",
-      "file": "agents/task-executor.md"
+      "file": "agents/worker.md"
     },
     {
-      "name": "task-verifier",
+      "name": "inspector",
       "description": "Verify a task was completed correctly. Returns PASS or FAIL.",
-      "file": "agents/task-verifier.md"
+      "file": "agents/inspector.md"
     }
   ],
   "requirements": {

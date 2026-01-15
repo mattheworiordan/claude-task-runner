@@ -1,5 +1,5 @@
 ---
-name: tasks-quick
+name: colony-quick
 description: Quick task execution from a simple prompt - auto-generates brief and tasks
 version: 1.0.0
 status: experimental
@@ -19,7 +19,7 @@ Execute a task directly from a simple prompt without manual brief/task creation.
 ## How It Works
 
 ```
-/tasks-quick "Add dark mode toggle to settings page, persist preference to localStorage"
+/colony-quick "Add dark mode toggle to settings page, persist preference to localStorage"
 ```
 
 This will:
@@ -49,11 +49,11 @@ Extract from `$ARGUMENTS`:
 
 **If NOT suitable:**
 ```
-This task seems too complex for /tasks-quick:
+This task seems too complex for /colony-quick:
 • {reason 1}
 • {reason 2}
 
-Suggest using /tasks-plan instead for:
+Suggest using /colony-plan instead for:
 • More control over task decomposition
 • Ability to add context and design intent
 • Interactive planning
@@ -65,12 +65,12 @@ If user says no or doesn't respond, exit.
 
 ## Step 3: Generate Brief
 
-Create `.working/task-runner/{project-name}/resources/original-brief.md`:
+Create `.working/colony/{project-name}/resources/original-brief.md`:
 
 ```markdown
 # Quick Task: {slugified-name}
 
-Generated from: /tasks-quick
+Generated from: /colony-quick
 Prompt: "{original prompt}"
 
 ## Goal
@@ -134,9 +134,9 @@ When done, output: TASK_COMPLETE: T{N}
 ## Step 5: Create Project Structure
 
 ```bash
-mkdir -p .working/task-runner/{project-name}/tasks
-mkdir -p .working/task-runner/{project-name}/logs
-mkdir -p .working/task-runner/{project-name}/resources
+mkdir -p .working/colony/{project-name}/tasks
+mkdir -p .working/colony/{project-name}/logs
+mkdir -p .working/colony/{project-name}/resources
 ```
 
 Create minimal `state.json`:
@@ -178,7 +178,7 @@ Decomposed into {N} tasks:
 Running in autonomous mode (serial)...
 ```
 
-Then execute using the same loop as `/tasks-run` but with:
+Then execute using the same loop as `/colony-run` but with:
 - Always autonomous mode
 - Always serial execution (concurrency: 1)
 - No Git operations
@@ -200,7 +200,7 @@ Changes made:
 Verification:
 {test output or verification result}
 
-Full logs: .working/task-runner/{project-name}/logs/
+Full logs: .working/colony/{project-name}/logs/
 ```
 
 On failure:
@@ -214,14 +214,14 @@ Error:
 {error summary}
 
 Options:
-• Fix the issue and run: /tasks-run {project-name}
-• See details: /tasks-status {project-name}
-• Abandon: rm -rf .working/task-runner/{project-name}
+• Fix the issue and run: /colony-run {project-name}
+• See details: /colony-status {project-name}
+• Abandon: rm -rf .working/colony/{project-name}
 ```
 
 ## Safety Rules
 
-1. **Max 5 tasks** - If decomposition yields >5 tasks, suggest /tasks-plan
+1. **Max 5 tasks** - If decomposition yields >5 tasks, suggest /colony-plan
 2. **Serial execution only** - No parallelization inference
 3. **No Git operations** - Changes stay uncommitted
 4. **30 minute timeout** - Abort if taking too long
@@ -233,24 +233,24 @@ Options:
 
 ```bash
 # Clear, specific, testable
-/tasks-quick "Add a loading spinner to the submit button"
-/tasks-quick "Fix the typo 'recieve' -> 'receive' across all files"
-/tasks-quick "Add validation for email field - must be valid email format"
-/tasks-quick "Extract the header component into its own file"
+/colony-quick "Add a loading spinner to the submit button"
+/colony-quick "Fix the typo 'recieve' -> 'receive' across all files"
+/colony-quick "Add validation for email field - must be valid email format"
+/colony-quick "Extract the header component into its own file"
 ```
 
-### Bad Quick Tasks (Use /tasks-plan Instead)
+### Bad Quick Tasks (Use /colony-plan Instead)
 
 ```bash
 # Too vague
-/tasks-quick "Improve the UX"
+/colony-quick "Improve the UX"
 
 # Too large
-/tasks-quick "Add user authentication with OAuth, email verification, and password reset"
+/colony-quick "Add user authentication with OAuth, email verification, and password reset"
 
 # Requires decisions
-/tasks-quick "Refactor the data layer"
+/colony-quick "Refactor the data layer"
 
 # Subjective outcome
-/tasks-quick "Make the homepage look better"
+/colony-quick "Make the homepage look better"
 ```

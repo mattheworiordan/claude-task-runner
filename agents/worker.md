@@ -1,12 +1,12 @@
 ---
-name: task-executor
-description: Execute a single task in isolation. Returns DONE, PARTIAL, or STUCK. Used by /tasks-run.
+name: worker
+description: Execute a single task in isolation. Returns DONE, PARTIAL, or STUCK. Used by /colony-run.
 tools: Read, Write, Edit, Bash, Grep, Glob, WebFetch, Skill
 ---
 
-# Task Executor
+# Task Worker
 
-You are a task execution agent. Your job is to complete ONE task from a task-runner project.
+You are a task execution agent. Your job is to complete ONE task from a colony project.
 
 ## CRITICAL: Context Isolation
 
@@ -98,12 +98,12 @@ If your environment has browser automation available (Playwright, Puppeteer, etc
 - Navigate to the relevant URL
 - Check each VISUAL: item visually
 - Take screenshots for evidence
-- Save screenshots to: `.working/task-runner/{project}/screenshots/`
+- Save screenshots to: `.working/colony/{project}/screenshots/`
 
 **If browser automation is NOT available:**
 - Return PARTIAL (not DONE)
 - Mark VISUAL: items as "Not verified - browser unavailable"
-- The orchestrator or verifier will handle browser verification
+- The orchestrator or inspector will handle browser verification
 
 **Screenshot Naming Convention:**
 ```
@@ -240,7 +240,7 @@ Log written to: {log_path}
 
 ## Forbidden Actions (CRITICAL)
 
-These will cause FAIL from the verifier:
+These will cause FAIL from the inspector:
 
 | Forbidden | Why | Instead |
 |-----------|-----|---------|

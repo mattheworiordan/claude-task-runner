@@ -1,6 +1,6 @@
 ---
-name: tasks-status
-description: Show detailed status of a task-runner project
+name: colony-status
+description: Show detailed status of a colony project
 version: 1.0.0
 status: active
 
@@ -10,7 +10,7 @@ allowed-tools: Read, Bash, Glob
 
 # Task Status
 
-Show detailed status for a task-runner project.
+Show detailed status for a colony project.
 
 ## Step 1: Find Project
 
@@ -18,17 +18,17 @@ If $ARGUMENTS specifies a project, use that.
 
 Otherwise, check for projects:
 ```bash
-ls -d .working/task-runner/*/ 2>/dev/null
+ls -d .working/colony/*/ 2>/dev/null
 ```
 
 - One project → show that project's status
-- Multiple projects → ask which one (or suggest `/tasks-projects` for overview)
-- No projects → "No projects found. Use /tasks-plan to create one."
+- Multiple projects → ask which one (or suggest `/colony-projects` for overview)
+- No projects → "No projects found. Use /colony-plan to create one."
 
 ## Step 2: Load State
 
 ```
-Read: .working/task-runner/{project}/state.json
+Read: .working/colony/{project}/state.json
 ```
 
 ## Step 3: Display Status
@@ -94,9 +94,9 @@ Read: .working/task-runner/{project}/state.json
 ### Next Steps
 
 {If running: "Execution in progress..."}
-{If paused: "Run /tasks-run to continue"}
+{If paused: "Run /colony-run to continue"}
 {If complete: "All tasks complete!"}
-{If failures: "Fix T005 and run /tasks-run to retry"}
+{If failures: "Fix T005 and run /colony-run to retry"}
 ════════════════════════════════════════════════════════════════
 ```
 

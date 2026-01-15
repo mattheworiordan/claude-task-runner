@@ -1,6 +1,10 @@
-# Claude Task Runner
+# Colony
 
-A Claude Code plugin for decomposing complex tasks into executable sub-tasks with parallel execution, independent verification, and comprehensive reporting.
+![Colony](assets/colony-logo.jpg)
+
+A Claude Code plugin that decomposes complex tasks into parallel sub-tasks with independent verification — like a colony of AI workers.
+
+---
 
 ## Why This Exists
 
@@ -11,21 +15,37 @@ When tackling large, multi-step coding tasks, AI assistants often struggle with:
 - **Recovery** - losing progress when interrupted
 - **Reporting** - not summarizing what was done and what needs attention
 
-This plugin solves these problems with a structured task execution framework.
+Colony solves these problems by spawning specialized worker agents that execute tasks in parallel, with independent inspector agents verifying each completion.
 
 ## Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/mattheworiordan/claude-task-runner.git
+git clone https://github.com/mattheworiordan/colony.git
 
 # Or install via Claude Code plugin manager (coming soon)
-claude plugins install claude-task-runner
+claude plugins install colony
 ```
 
-After installation, restart Claude Code. The `/tasks-*` commands will be available.
+After installation, restart Claude Code. The `/colony-*` commands will be available.
+
+### Working Directory Convention
+
+Colony stores all project state in a `.working/colony/` directory within your project. This includes task files, execution logs, screenshots, and reports.
+
+**Recommendation**: Add `.working/` to your global gitignore to avoid committing Colony's working files:
+
+```bash
+# Add to your global gitignore
+echo ".working/" >> ~/.gitignore_global
+git config --global core.excludesfile ~/.gitignore_global
+```
+
+Alternatively, add `.working/` to your project's `.gitignore` if you prefer per-project configuration.
 
 ## Quick Start
+
+### Option 1: Create a Brief File
 
 ```bash
 # 1. Create a brief describing what you want to accomplish
@@ -43,29 +63,68 @@ Add login/logout functionality with session management.
 EOF
 
 # 2. Plan the tasks
-/tasks-plan .working/MY_FEATURE_BRIEF.md
+/colony-plan .working/MY_FEATURE_BRIEF.md
 
 # 3. Review the decomposition, then run
-/tasks-run
-
-# 4. Or run autonomously (no human checkpoints)
-/tasks-run autonomous
+/colony-run
 ```
+
+### Option 2: Point to Any File
+
+You can use any markdown file as a brief — it doesn't need to be in `.working/`:
+
+```bash
+# Use a file from docs/
+/colony-plan docs/FEATURE_SPEC.md
+
+# Use a file from anywhere
+/colony-plan ~/Desktop/my-project-plan.md
+```
+
+### Option 3: Describe Inline
+
+If you don't have a brief file, just run `/colony-plan` and describe what you want:
+
+```bash
+/colony-plan
+# Colony will ask: "I didn't find any brief files. You can:
+#   1. Tell me the path to your brief
+#   2. Paste the tasks directly here
+#   3. Describe what you want to accomplish"
+```
+
+### Option 4: Quick Tasks
+
+For simple, well-defined tasks, skip the planning phase entirely:
+
+```bash
+/colony-quick "Add a loading spinner to the submit button"
+```
+
+## Brief Discovery
+
+When you run `/colony-plan` without specifying a file, Colony searches for potential briefs in:
+
+1. **`.working/*.md`** - The conventional location for working documents
+2. **`docs/*.md`** - Documentation folder
+3. **Files matching patterns**: `*brief*`, `*plan*`, `*todo*`, `*spec*`
+
+If multiple candidates are found, Colony will ask which one to use. If none are found, you can paste or describe your requirements directly.
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `/tasks-plan [brief]` | Decompose a brief into executable tasks |
-| `/tasks-run [project]` | Execute tasks with verification |
-| `/tasks-run autonomous` | Execute without human checkpoints |
-| `/tasks-status [project]` | Show detailed project status |
-| `/tasks-projects` | List all task-runner projects |
-| `/tasks-quick "prompt"` | Quick execution for simple tasks |
+| `/colony-plan [brief]` | Decompose a brief into executable tasks |
+| `/colony-run [project]` | Execute tasks with verification |
+| `/colony-run autonomous` | Execute without human checkpoints |
+| `/colony-status [project]` | Show detailed project status |
+| `/colony-projects` | List all colony projects |
+| `/colony-quick "prompt"` | Quick execution for simple tasks |
 
 ## How It Works
 
-### 1. Planning Phase (`/tasks-plan`)
+### 1. Planning Phase (`/colony-plan`)
 
 - Finds or creates a brief file
 - Analyzes the codebase for parallelization opportunities
@@ -73,20 +132,20 @@ EOF
 - Captures context, design intent, and acceptance criteria
 - Sets up Git strategy (branch, commit frequency)
 
-### 2. Execution Phase (`/tasks-run`)
+### 2. Execution Phase (`/colony-run`)
 
-- Spawns isolated sub-agents for each task
+- Spawns isolated **worker** agents for each task
 - Runs tasks in parallel where safe
-- Independent verification agent checks each completion
+- Independent **inspector** agents verify each completion
 - Automatic retry on failure (up to 3 attempts)
 - Git commits at phase boundaries
 - Comprehensive report generation
 
 ### 3. Key Features
 
-**Context Isolation**: Each task runs in a fresh agent context with only the information it needs. No context drift from accumulated conversation history.
+**Context Isolation**: Each worker runs in a fresh context with only the information it needs. No context drift from accumulated conversation history.
 
-**Independent Verification**: A separate verification agent checks every "DONE" claim. Catches workarounds, missing criteria, and design intent violations.
+**Independent Verification**: A separate inspector agent checks every "DONE" claim. Catches workarounds, missing criteria, and design intent violations.
 
 **Smart Parallelization**: Analyzes dependencies and resource constraints. Asks when uncertain. Serializes browser tests, database migrations, etc.
 
@@ -98,10 +157,10 @@ EOF
 
 ## Project Structure
 
-When you run `/tasks-plan`, it creates:
+When you run `/colony-plan`, it creates:
 
 ```
-.working/task-runner/{project-name}/
+.working/colony/{project-name}/
 ├── context.md              # Project rules, tech stack, parallelization
 ├── state.json              # Task status, Git config, execution log
 ├── tasks/
@@ -123,14 +182,14 @@ When you run `/tasks-plan`, it creates:
 
 ### Architecture
 
-| Aspect | Task Runner | RALF |
-|--------|-------------|------|
-| **Approach** | Task decomposition + sub-agents | Simple while loop |
+| Aspect | Colony | RALF |
+|--------|--------|------|
+| **Approach** | Task decomposition + worker agents | Simple while loop |
 | **Context** | Fresh per-task (isolated) | Full reset each iteration |
 | **State** | JSON file (structured) | Filesystem + progress file |
-| **Verification** | Independent verifier agent | LLM self-check in next iteration |
+| **Verification** | Independent inspector agent | LLM self-check in next iteration |
 
-### When to Use Task Runner
+### When to Use Colony
 
 ✅ **Complex multi-step projects** - When work can be parallelized and benefits from structured decomposition
 
@@ -155,24 +214,24 @@ When you run `/tasks-plan`, it creates:
 ### Key Differences
 
 **Context Handling**:
-- *Task Runner*: Each task gets exactly the context it needs. No accumulated drift.
+- *Colony*: Each worker gets exactly the context it needs. No accumulated drift.
 - *RALF*: Full context reset each iteration. Progress tracked in filesystem.
 
 **Verification**:
-- *Task Runner*: Independent agent verifies every completion. Catches workarounds.
+- *Colony*: Independent inspector verifies every completion. Catches workarounds.
 - *RALF*: Same model checks its own work in next iteration.
 
 **Parallelization**:
-- *Task Runner*: Runs up to 8 tasks concurrently when safe.
+- *Colony*: Runs up to 8 workers concurrently when safe.
 - *RALF*: Single-threaded by design.
 
 **Recovery**:
-- *Task Runner*: Structured state.json allows precise recovery.
+- *Colony*: Structured state.json allows precise recovery.
 - *RALF*: Progress file provides coarse-grained recovery.
 
 ### Bottom Line
 
-- Use **Task Runner** for structured, parallelizable work where verification matters
+- Use **Colony** for structured, parallelizable work where verification matters
 - Use **RALF** for simple, sequential tasks where you want minimal setup
 
 They're complementary approaches, not competitors. Choose based on your task's needs.
@@ -183,14 +242,14 @@ They're complementary approaches, not competitors. Choose based on your task's n
 
 ```
 # During execution
-"set concurrency to 3"   # Run up to 3 tasks in parallel
+"set concurrency to 3"   # Run up to 3 workers in parallel
 "serialize"              # Set concurrency to 1
 "maximize"               # Set concurrency to 8
 ```
 
 ### Git Strategy
 
-Configured during `/tasks-plan`:
+Configured during `/colony-plan`:
 - **Branch**: Feature branch or current branch
 - **Commits**: After each task, phase, or at end
 - **Style**: Conventional commits with Co-Authored-By
@@ -198,7 +257,7 @@ Configured during `/tasks-plan`:
 ### Autonomous Mode
 
 ```
-/tasks-run autonomous
+/colony-run autonomous
 ```
 
 Safety limits:
@@ -208,7 +267,7 @@ Safety limits:
 
 ## Task File Format
 
-Each task file (`.working/task-runner/{project}/tasks/T{NNN}.md`) contains:
+Each task file (`.working/colony/{project}/tasks/T{NNN}.md`) contains:
 
 ```markdown
 # Task T001: Setup Authentication
@@ -251,19 +310,19 @@ setup
 
 ### "No projects found"
 
-Run `/tasks-plan` first to create a project from a brief.
+Run `/colony-plan` first to create a project from a brief.
 
 ### Task stuck in "running"
 
-Tasks running >30 minutes reset to "pending" on next `/tasks-run`.
+Tasks running >30 minutes reset to "pending" on next `/colony-run`.
 
 ### Verification keeps failing
 
-Read the verifier's feedback in `.working/task-runner/{project}/logs/{task}_LOG.md`. It includes specific suggestions.
+Read the inspector's feedback in `.working/colony/{project}/logs/{task}_LOG.md`. It includes specific suggestions.
 
 ### Browser verification not working
 
-Ensure you have browser automation tools available (Playwright, Puppeteer). The plugin will use whatever browser automation is available in your environment.
+Ensure you have browser automation tools available (Playwright, Puppeteer). Colony will use whatever browser automation is available in your environment.
 
 ## Contributing
 

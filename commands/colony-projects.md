@@ -1,6 +1,6 @@
 ---
-name: tasks-projects
-description: List all task-runner projects with summary status
+name: colony-projects
+description: List all colony projects with summary status
 version: 1.0.0
 status: active
 
@@ -10,19 +10,19 @@ allowed-tools: Read, Bash, Glob
 
 # Task Projects
 
-List all task-runner projects with their status.
+List all colony projects with their status.
 
 ## Step 1: Find Projects
 
 ```bash
-ls -d .working/task-runner/*/ 2>/dev/null
+ls -d .working/colony/*/ 2>/dev/null
 ```
 
 If no projects:
 ```
-No task-runner projects found.
+No colony projects found.
 
-Use /tasks-plan to create a project from a brief.
+Use /colony-plan to create a project from a brief.
 ```
 
 ## Step 2: Load Each Project's State
@@ -38,7 +38,7 @@ For each project directory, read `state.json` and calculate:
 
 ```markdown
 ════════════════════════════════════════════════════════════════
-## Task Runner Projects
+## Colony Projects
 
 | Project | Progress | Status | Tasks | Last Activity |
 |---------|----------|--------|-------|---------------|
@@ -80,11 +80,11 @@ For each project directory, read `state.json` and calculate:
 
 | Command | Action |
 |---------|--------|
-| `/tasks-status {project}` | Detailed status for a project |
-| `/tasks-run {project}` | Start/resume execution |
-| `/tasks-plan` | Create a new project |
+| `/colony-status {project}` | Detailed status for a project |
+| `/colony-run {project}` | Start/resume execution |
+| `/colony-plan` | Create a new project |
 | "delete {project}" | Remove a project |
-| "archive {project}" | Move to .working/task-runner/archive/ |
+| "archive {project}" | Move to .working/colony/archive/ |
 ```
 
 ## Step 4: Interactive Options
@@ -93,8 +93,8 @@ After listing, user can:
 
 | Command | Action |
 |---------|--------|
-| "show {project}" | Same as /tasks-status {project} |
-| "run {project}" | Same as /tasks-run {project} |
+| "show {project}" | Same as /colony-status {project} |
+| "run {project}" | Same as /colony-run {project} |
 | "delete {project}" | Remove project directory |
 | "archive {project}" | Move to archive folder |
 | "clean completed" | Archive all 100% complete projects |

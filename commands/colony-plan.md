@@ -1,5 +1,5 @@
 ---
-name: tasks-plan
+name: colony-plan
 description: Plan tasks from a brief - interactive task decomposition
 version: 1.0.0
 status: active
@@ -10,7 +10,7 @@ allowed-tools: Read, Write, Bash, Grep, Glob, AskUserQuestion
 
 # Plan Tasks
 
-Create a task-runner project by decomposing a brief into executable tasks.
+Create a colony project by decomposing a brief into executable tasks.
 
 ## Step 1: Find Brief Files
 
@@ -59,13 +59,13 @@ Derive from brief:
 
 Check if project exists:
 ```bash
-ls -d .working/task-runner/*/ 2>/dev/null
+ls -d .working/colony/*/ 2>/dev/null
 ```
 
 If project name already exists, ask:
 ```
 Project "integration-brief" already exists (8 tasks, 3 complete).
-• Continue with existing project? (use /tasks-run)
+• Continue with existing project? (use /colony-run)
 • Create new version? (integration-brief-2)
 • Overwrite? (will lose existing progress)
 ```
@@ -215,11 +215,11 @@ git log --oneline -5
 ### Branch Strategy
 
 I recommend creating a feature branch for this work:
-• Suggested name: `task-runner/{project-name}` or `feature/{project-name}`
+• Suggested name: `colony/{project-name}` or `feature/{project-name}`
 • This keeps main clean and allows easy review/rollback
 
 Options:
-1. Create feature branch (recommended): `task-runner/{project-name}`
+1. Create feature branch (recommended): `colony/{project-name}`
 2. Work on current branch: `{current-branch}`
 3. Different branch name: [specify]
 
@@ -268,7 +268,7 @@ Override any of these? [y/N]
 ```
 
 **Note:** The task runner is an exception to the "never commit without permission" rule
-since you explicitly invoked `/tasks-run` to execute work autonomously.
+since you explicitly invoked `/colony-run` to execute work autonomously.
 
 ### 5.6: Store Git Configuration
 
@@ -341,10 +341,10 @@ Look for:
 ## Step 7: Create Project Directory
 
 ```bash
-mkdir -p .working/task-runner/{project-name}/tasks
-mkdir -p .working/task-runner/{project-name}/logs
-mkdir -p .working/task-runner/{project-name}/resources
-mkdir -p .working/task-runner/{project-name}/screenshots
+mkdir -p .working/colony/{project-name}/tasks
+mkdir -p .working/colony/{project-name}/logs
+mkdir -p .working/colony/{project-name}/resources
+mkdir -p .working/colony/{project-name}/screenshots
 ```
 
 The `resources/` folder stores the original brief and any reference materials.
@@ -352,7 +352,7 @@ The `screenshots/` folder stores all visual verification evidence (kept with the
 
 ## Step 8: Capture Context
 
-Create `.working/task-runner/{project-name}/context.md`:
+Create `.working/colony/{project-name}/context.md`:
 
 ```markdown
 # Project Context: {project-name}
@@ -391,13 +391,13 @@ No feature branch or commits will be created.
 
 - **Type:** {code-only | visual | mixed}
 - **Browser required:** {yes | no}
-- **Screenshot folder:** `.working/task-runner/{project-name}/screenshots/`
+- **Screenshot folder:** `.working/colony/{project-name}/screenshots/`
 
 {If visual or mixed:}
 **Browser verification is REQUIRED for this project.**
 - Tasks with `VISUAL:` prefixed criteria MUST use browser automation
 - PARTIAL response if browser verification cannot be completed
-- Screenshots saved to: `.working/task-runner/{project-name}/screenshots/`
+- Screenshots saved to: `.working/colony/{project-name}/screenshots/`
 
 ## Project Rules
 
@@ -489,7 +489,7 @@ Assign each task a `parallel_group`:
 
 ### Task File Format
 
-Create `.working/task-runner/{project-name}/tasks/T{NNN}.md`:
+Create `.working/colony/{project-name}/tasks/T{NNN}.md`:
 
 ```markdown
 # Task T{NNN}: {Short Name}
@@ -556,7 +556,7 @@ This signals to the verification system that the task is done.
 
 ## Step 10: Create State File
 
-Create `.working/task-runner/{project-name}/state.json`:
+Create `.working/colony/{project-name}/state.json`:
 
 ```json
 {
@@ -607,7 +607,7 @@ Create `.working/task-runner/{project-name}/state.json`:
 Copy original brief to the resources folder for audit trail:
 
 ```bash
-cp {original-brief-path} .working/task-runner/{project-name}/resources/original-brief.md
+cp {original-brief-path} .working/colony/{project-name}/resources/original-brief.md
 ```
 
 ## Step 12: Output Summary
@@ -615,7 +615,7 @@ cp {original-brief-path} .working/task-runner/{project-name}/resources/original-
 ```markdown
 ## Project Created: {project-name}
 
-**Location:** .working/task-runner/{project-name}/
+**Location:** .working/colony/{project-name}/
 **Tasks:** {count} tasks created
 **Task Type:** {implementation | research | documentation | mixed}
 **Estimated Total Effort:** {sum of estimates}
@@ -644,10 +644,10 @@ cp {original-brief-path} .working/task-runner/{project-name}/resources/original-
 - T002, T003, T004: {can run together}
 
 ### Next Steps
-1. Review tasks: `ls .working/task-runner/{project-name}/tasks/`
-2. Start execution: `/tasks-run`
-3. Start autonomous: `/tasks-run autonomous`
-4. Monitor: `/tasks-status`
+1. Review tasks: `ls .working/colony/{project-name}/tasks/`
+2. Start execution: `/colony-run`
+3. Start autonomous: `/colony-run autonomous`
+4. Monitor: `/colony-status`
 ```
 
 ## Error Handling
@@ -656,4 +656,4 @@ cp {original-brief-path} .working/task-runner/{project-name}/resources/original-
 - If parallelization is unclear, ask user
 - If task type is unclear, ask user (see Step 4)
 - If Git strategy is active AND Git state is dirty, refuse and prompt user
-- Log issues to `.working/task-runner/{project-name}/planning.log`
+- Log issues to `.working/colony/{project-name}/planning.log`
