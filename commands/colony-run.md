@@ -113,7 +113,7 @@ If user says "set concurrency to N" or "run with N agents":
 - Update state.json concurrency
 - Confirm: "Concurrency set to {N} agents"
 
-Valid range: 1-8 agents.
+Minimum: 1 agent. No maximum—set based on task complexity and resources.
 
 ## Step 4b: Check Autonomous Mode
 
@@ -836,12 +836,11 @@ If interrupted:
 | "pause" / "stop" | Stop after current batch |
 | "autonomous" / "auto" | Switch to autonomous mode |
 | "interactive" | Switch back to interactive mode |
-| "set concurrency to N" | Adjust parallel agents (1-8) |
+| "set concurrency to N" | Adjust parallel agents |
 | "skip T005" | Mark task as skipped, continue |
 | "show T005" | Display task details and error |
 | "retry T005" | Reset failed task to pending |
 | "serialize" | Set concurrency to 1 |
-| "maximize" | Set concurrency to 8 |
 | "commit now" | Force commit of current changes |
 | "skip commit" | Skip the current phase commit |
 | "show changes" | Display git diff --stat |

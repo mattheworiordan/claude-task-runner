@@ -1,21 +1,111 @@
 # Colony
 
-![Colony](assets/colony-logo.jpg)
+<img src="assets/colony-logo.jpg" alt="Colony" width="300">
 
-A Claude Code plugin that decomposes complex tasks into parallel sub-tasks with independent verification — like a colony of AI workers.
+**Your AI swarm for serious software engineering.**
+
+Colony turns Claude Code into a parallel task execution engine with independent verification. Give it a complex task, and it spawns a colony of specialized workers—each with fresh context, each verified by an independent inspector.
+
+> **Like Ralph, but built for real work.** Where Ralph iterates sequentially and checks its own homework, Colony intelligently parallelizes work with independent QA. Human-in-the-loop or fully autonomous. Git-aware. Production-ready.
 
 ---
 
-## Why This Exists
+## See It In Action
 
-When tackling large, multi-step coding tasks, AI assistants often struggle with:
-- **Context drift** - forgetting requirements after many interactions
-- **Verification gaps** - claiming completion without proper testing
-- **Parallelization** - not leveraging concurrent execution opportunities
-- **Recovery** - losing progress when interrupted
-- **Reporting** - not summarizing what was done and what needs attention
+<img src="assets/colony-runner-animated.gif" alt="Colony executing tasks" width="700">
 
-Colony solves these problems by spawning specialized worker agents that execute tasks in parallel, with independent inspector agents verifying each completion.
+**Smart Planning** — Colony analyzes your brief, identifies parallelization opportunities, and creates an execution plan:
+
+<img src="assets/colony-planning.png" alt="Colony planning phase" width="700">
+
+**Dependency-Aware Execution** — Tasks run in parallel where safe, serialize where necessary:
+
+<img src="assets/colony-planned.png" alt="Colony execution plan" width="700">
+
+**Simple Commands** — Everything accessible via `/colony-*` commands:
+
+<img src="assets/colony-commands.png" alt="Colony commands" width="700">
+
+---
+
+## Why Colony Wins
+
+| Capability | Traditional AI | Ralph | Colony |
+|------------|----------------|-------|--------|
+| **Context** | Drifts after 10+ exchanges | Full reset each iteration | Fresh context per task |
+| **Verification** | "Done!" (it wasn't) | Checks its own homework | Independent inspector |
+| **Speed** | One thing at a time | Single-threaded | Intelligent parallelization |
+| **Oversight** | All or nothing | Autonomous only | Human-in-loop or autonomous |
+| **Git workflow** | Manual | Manual | Automatic branch + commits |
+| **Recovery** | Start over | Coarse progress file | Task-level resume |
+| **Audit trail** | Nothing | Progress notes | Full execution logs |
+
+---
+
+## Key Features
+
+### Intelligent Parallelization
+Colony doesn't just run things in parallel—it *thinks* about what can safely parallelize:
+
+- **Dependency analysis** — Understands task dependencies and serializes when needed
+- **Resource awareness** — Knows when tasks touch the same files and avoids conflicts
+- **Asks when uncertain** — Won't guess on parallelization safety; asks you instead
+- **Dynamic adjustment** — Change concurrency mid-run: `"set concurrency to 3"`
+
+### Two Execution Modes
+
+**Human-in-the-Loop (default)**
+- Checkpoints between phases for review
+- Approve parallelization decisions
+- Intervene on failures before retrying
+
+**Fully Autonomous**
+- Run overnight without interruption
+- Safety limits prevent runaway failures (max retries, failure thresholds)
+- Complete report waiting for you in the morning
+
+```bash
+/colony-run              # Interactive mode
+/colony-run autonomous   # Autonomous mode
+```
+
+### Git-Aware Workflow
+Colony understands your git workflow and integrates seamlessly:
+
+- **Branch strategy** — Creates feature branches or works on current branch
+- **Smart commits** — After each task, phase, or at project end (you choose)
+- **Conventional commits** — Proper commit messages with Co-Authored-By attribution
+- **Conflict prevention** — Won't parallelize tasks that touch the same files
+
+### Independent Verification
+Every task completion is verified by a separate inspector agent:
+
+- **Fresh context** — Inspector has no knowledge of worker's struggles or workarounds
+- **Acceptance criteria** — Checks every criterion, not just "does it compile"
+- **Visual verification** — `VISUAL:` criteria trigger screenshot capture and validation
+- **No self-deception** — Worker can't mark itself complete; inspector decides
+
+### Full Recovery
+Interrupted? Pick up exactly where you left off:
+
+- **Structured state** — All progress saved to `state.json`
+- **Task-level granularity** — Resume from the exact task that was interrupted
+- **Execution logs** — Every task has detailed logs of what happened
+- **Artifact validation** — Screenshots and logs must exist before marking complete
+
+---
+
+## The Problem With AI Coding Today
+
+When tackling large, multi-step coding tasks, AI assistants struggle with:
+
+- **Context drift** — forgetting requirements after many interactions
+- **Verification gaps** — claiming completion without proper testing
+- **Sequential bottlenecks** — not leveraging concurrent execution
+- **Lost progress** — no recovery when interrupted
+- **Invisible work** — no summary of what was done
+
+**Colony solves all of this.** Specialized worker agents execute tasks in parallel. Independent inspector agents verify every completion. Everything logged, everything recoverable.
 
 ## Installation
 
@@ -201,65 +291,49 @@ When you run `/colony-plan`, it creates:
 └── REPORT.md              # Final execution report
 ```
 
-## Comparison with RALF
+## Colony vs Ralph
 
-[RALF (Ralph Wiggum)](https://www.cursor.com/blog/ralf) is another approach to autonomous AI coding. Here's how they compare:
+[Ralph](https://www.cursor.com/blog/ralf) popularized autonomous AI coding with a clever while-loop approach. Colony takes it further.
 
-### Architecture
+### The Key Insight
 
-| Aspect | Colony | RALF |
-|--------|--------|------|
-| **Approach** | Task decomposition + worker agents | Simple while loop |
-| **Context** | Fresh per-task (isolated) | Full reset each iteration |
-| **State** | JSON file (structured) | Filesystem + progress file |
-| **Verification** | Independent inspector agent | LLM self-check in next iteration |
+**Ralph's weakness**: It checks its own homework. The same model that claims "done" also decides if it's really done. That's like asking a student to grade their own test.
 
-### When to Use Colony
+**Colony's answer**: Independent verification. A separate inspector agent—with fresh context and no ego investment—verifies every completion. It catches workarounds, missing criteria, and "works on my machine" claims.
 
-✅ **Complex multi-step projects** - When work can be parallelized and benefits from structured decomposition
+### Head-to-Head
 
-✅ **Teams or handoffs** - Clear task files, logs, and reports make it easy to understand what happened
+| Capability | Colony | Ralph |
+|------------|--------|------|
+| **Parallelization** | Intelligent—analyzes dependencies, asks when uncertain | Single-threaded |
+| **Execution modes** | Human-in-the-loop or fully autonomous | Single mode |
+| **Verification** | Independent inspector agent | Self-check (same model) |
+| **Context** | Fresh per-task | Full reset each iteration |
+| **Git workflow** | Branch strategy, smart commits, conflict prevention | Manual |
+| **Visual testing** | Built-in screenshot verification | Manual |
+| **Recovery** | Precise task-level resume | Coarse progress file |
+| **Audit trail** | Complete execution logs per task | Progress notes |
 
-✅ **Visual/browser testing** - Built-in VISUAL: criteria and screenshot capture
+### When to Use Each
 
-✅ **Git workflow integration** - Automatic branch management and phase commits
+**Choose Colony when:**
+- Work can be parallelized (most real projects)
+- You need proof that tasks are actually complete
+- Multiple people need to understand what happened
+- You're building production code, not prototyping
 
-✅ **Projects needing audit trail** - Every task has execution logs and verification results
+**Choose Ralph when:**
+- Tasks are strictly sequential
+- You want zero setup (just a prompt pattern)
+- You're exploring without clear requirements
 
-### When to Use RALF
+### The Bottom Line
 
-✅ **Single-threaded iteration** - When tasks must be strictly sequential
+Ralph proved autonomous AI coding works. Colony makes it production-ready.
 
-✅ **Simpler setup** - No plugin installation, just a prompt pattern
-
-✅ **Maximum simplicity** - When you want the AI to figure out its own workflow
-
-✅ **Exploration tasks** - When the goal isn't well-defined upfront
-
-### Key Differences
-
-**Context Handling**:
-- *Colony*: Each worker gets exactly the context it needs. No accumulated drift.
-- *RALF*: Full context reset each iteration. Progress tracked in filesystem.
-
-**Verification**:
-- *Colony*: Independent inspector verifies every completion. Catches workarounds.
-- *RALF*: Same model checks its own work in next iteration.
-
-**Parallelization**:
-- *Colony*: Runs up to 8 workers concurrently when safe.
-- *RALF*: Single-threaded by design.
-
-**Recovery**:
-- *Colony*: Structured state.json allows precise recovery.
-- *RALF*: Progress file provides coarse-grained recovery.
-
-### Bottom Line
-
-- Use **Colony** for structured, parallelizable work where verification matters
-- Use **RALF** for simple, sequential tasks where you want minimal setup
-
-They're complementary approaches, not competitors. Choose based on your task's needs.
+**Speed**: Parallelization beats sequential iteration.
+**Trust**: Independent verification beats self-assessment.
+**Recovery**: Structured state beats hope.
 
 ## Configuration
 
@@ -267,10 +341,12 @@ They're complementary approaches, not competitors. Choose based on your task's n
 
 ```
 # During execution
-"set concurrency to 3"   # Run up to 3 workers in parallel
+"set concurrency to 3"   # Run 3 workers in parallel
+"set concurrency to 10"  # Run 10 workers in parallel
 "serialize"              # Set concurrency to 1
-"maximize"               # Set concurrency to 8
 ```
+
+Default is 5. Set to any value based on your machine resources and task complexity.
 
 ### Git Strategy
 
@@ -361,10 +437,13 @@ Contributions welcome! Please:
 
 MIT License - See [LICENSE](LICENSE) for details.
 
-## Author
-
-Matthew O'Riordan ([@mattheworiordan](https://github.com/mattheworiordan))
-
 ---
 
-Built with Claude Code. Tested on real projects.
+**Built by [Matthew O'Riordan](https://github.com/mattheworiordan)**, CEO at [Ably](https://ably.com)
+
+[Ably](https://ably.com) powers realtime experiences for billionds of devices each motnh. 
+Colony is how we ship code fast without breaking things.
+
+Building AI agents? Check out [Ably AI Transport](https://ably.com/solutions/ai-agents) - drop-in infrastructure layer for a resilient, AI UX. Ably AI Transport brings realtime continuity and control to your agents. Stateful, steerable, multi-device experiences.
+
+[Star on GitHub](https://github.com/mattheworiordan/colony) • [Report Issues](https://github.com/mattheworiordan/colony/issues) • [Follow @mattheworiordan](https://x.com/mattheworiordan)
