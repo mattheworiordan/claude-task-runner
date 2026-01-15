@@ -441,7 +441,7 @@ MIT License - See [LICENSE](LICENSE) for details.
 
 **Built by [Matthew O'Riordan](https://github.com/mattheworiordan)**, CEO at [Ably](https://ably.com)
 
-[Ably](https://ably.com) powers realtime experiences for billionds of devices each motnh. 
+[Ably](https://ably.com) powers realtime experiences with trillions of messages for billions of devices each month. 
 Colony is how we ship code fast without breaking things.
 
 Building AI agents? Check out [Ably AI Transport](https://ably.com/solutions/ai-agents) - drop-in infrastructure layer for a resilient, AI UX. Ably AI Transport brings realtime continuity and control to your agents. Stateful, steerable, multi-device experiences.
