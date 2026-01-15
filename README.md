@@ -249,6 +249,21 @@ npm install
 npm run build
 ```
 
+### Run the Demo
+
+To see all features in action:
+
+```bash
+./demo.sh
+```
+
+This interactive demo showcases:
+- Basic task execution
+- Task file processing
+- Different output formats (text, JSON, markdown)
+- Configuration generation
+- Parallel execution
+
 ### Run in Development Mode
 
 ```bash
