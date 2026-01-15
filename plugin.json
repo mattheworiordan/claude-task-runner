@@ -1,0 +1,68 @@
+{
+  "name": "claude-task-runner",
+  "version": "1.0.0",
+  "description": "Decompose complex tasks into executable sub-tasks with parallel execution, independent verification, and comprehensive reporting",
+  "author": "Matthew O'Riordan",
+  "license": "MIT",
+  "repository": "https://github.com/mattheworiordan/claude-task-runner",
+  "keywords": [
+    "task-runner",
+    "task-decomposition",
+    "parallel-execution",
+    "verification",
+    "autonomous",
+    "planning"
+  ],
+  "commands": [
+    {
+      "name": "tasks-plan",
+      "description": "Plan tasks from a brief - interactive task decomposition",
+      "file": "commands/tasks-plan.md"
+    },
+    {
+      "name": "tasks-run",
+      "description": "Execute tasks with smart parallelization and verification",
+      "file": "commands/tasks-run.md"
+    },
+    {
+      "name": "tasks-status",
+      "description": "Show detailed status of a task-runner project",
+      "file": "commands/tasks-status.md"
+    },
+    {
+      "name": "tasks-projects",
+      "description": "List all task-runner projects with summary status",
+      "file": "commands/tasks-projects.md"
+    },
+    {
+      "name": "tasks-quick",
+      "description": "Quick task execution from a simple prompt - auto-generates brief and tasks",
+      "file": "commands/tasks-quick.md"
+    }
+  ],
+  "agents": [
+    {
+      "name": "task-executor",
+      "description": "Execute a single task in isolation. Returns DONE, PARTIAL, or STUCK.",
+      "file": "agents/task-executor.md"
+    },
+    {
+      "name": "task-verifier",
+      "description": "Verify a task was completed correctly. Returns PASS or FAIL.",
+      "file": "agents/task-verifier.md"
+    }
+  ],
+  "requirements": {
+    "claude_code_version": ">=1.0.0",
+    "tools": [
+      "Read",
+      "Write",
+      "Edit",
+      "Bash",
+      "Task",
+      "Grep",
+      "Glob",
+      "AskUserQuestion"
+    ]
+  }
+}
