@@ -10,7 +10,7 @@
     {
       "name": "colony",
       "description": "Decompose complex tasks into parallel sub-tasks with independent verification",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "author": {
         "name": "Matthew O'Riordan",
         "email": "matthew@oriordan.org"
