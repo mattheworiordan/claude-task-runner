@@ -1,7 +1,7 @@
 ---
 name: colony-deploy
 description: Deploy workers with smart parallelization and verification
-version: 1.4.0
+version: 1.5.1
 status: active
 
 # Claude Code command registration
@@ -674,6 +674,34 @@ You're designed for coordination. Stay in your lane.
 **No exceptions. No shortcuts.**
 
 Even in autonomous mode, feedback creates subtasks with full worker + inspector verification. Autonomous mode skips human approval pauses, not bot verification.
+
+### 5.12: Context Health Check
+
+After 5+ feedback cycles, or when you notice:
+- Your responses slowing down or getting confused
+- Losing track of task dependencies
+- Forgetting which tasks are complete
+- Confusion about project state
+
+Tell the user:
+
+```
+Context is getting heavy. I recommend restarting with:
+  /colony-deploy {project}
+
+All state is preserved in CLI - execution will resume from current position.
+```
+
+**Why this works:**
+- CLI state management preserves everything (tasks, status, logs)
+- Fresh /colony-deploy reads state.json and continues
+- You get fresh context with all the rules intact
+- No work is lost, just context is refreshed
+
+**Signs you need this:**
+- You've processed more than 5 feedback items in one session
+- Multiple milestones have passed without restart
+- User has given complex multi-part feedback
 
 ```
 END REPEAT

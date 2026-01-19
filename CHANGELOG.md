@@ -1,10 +1,53 @@
 # Changelog
 
+## v1.5.1 (2026-01-19)
+
+### Summary
+
+**Removed `/colony-patrol` feature.** The bash outer-loop approach using `claude -p` runs in sandboxed mode and cannot write files without per-operation user approval, defeating autonomous execution. The performance optimizations from v1.5.0 are retained.
+
+### Removed: `/colony-patrol` (RELF-Style Execution)
+
+The `/colony-patrol` command and supporting scripts have been removed:
+- `bin/colony-patrol` - bash outer loop script
+- `bin/colony-progress-parser` - stream-json parser
+- `commands/colony-patrol.md` - slash command
+
+**Why it was removed:**
+- `claude -p` runs in a restricted sandbox that requires user approval for every file write
+- This defeated the purpose of autonomous execution (user had to approve each operation)
+- The milestone CLI commands remain in `bin/colony` for potential future use
+
+**What to use instead:**
+- `/colony-deploy` remains the primary execution command
+- Use "Continue with fresh context" at milestone checkpoints when you notice drift
+- For very long projects, consider breaking into smaller independent colonies
+
+### New: Context Health Check (Step 5.12)
+
+Orchestrator now monitors its own context health and suggests restart when needed:
+
+- After 5+ feedback cycles
+- When losing track of task dependencies
+- When confusion about project state
+
+The orchestrator will proactively suggest:
+```
+Context is getting heavy. I recommend restarting with:
+  /colony-deploy {project}
+
+All state is preserved in CLI - execution will resume from current position.
+```
+
+This provides a manual but reliable way to get fresh context without the sandbox limitations of `claude -p`.
+
+---
+
 ## v1.5.0 (2026-01-19)
 
 ### Summary
 
-**Performance optimization and clearer command naming.** This release reduces inspector token usage by ~40% through diff-based verification, and renames `colony-runner` to `colony-patrol` for clearer semantics.
+**Performance optimization.** This release reduces inspector token usage by ~40% through diff-based verification.
 
 ### Performance: Diff-Based Inspector Verification
 
@@ -35,21 +78,9 @@ After:  Worker A+B done → Inspect A+B (parallel)
 
 This is safe because inspectors are read-only and have separate log files.
 
-### Changed: `/colony-runner` → `/colony-patrol`
-
-Renamed for clearer semantics:
-
-| Command | Mode | Description |
-|---------|------|-------------|
-| `/colony-mobilize` | Plan | Prepare the operation |
-| `/colony-deploy` | Fast | In-session, context accumulates |
-| `/colony-patrol` | Strict | Fresh context per milestone |
-
-The naming now reflects the intent: **deploy for speed, patrol for strictness**.
-
 ### Changed: Milestone Context Choice
 
-`/colony-deploy` no longer auto-spawns fresh orchestrator at milestones. Instead, non-autonomous mode offers a choice:
+`/colony-deploy` now offers a choice at milestone boundaries (non-autonomous mode):
 
 ```
 Options:
@@ -61,19 +92,13 @@ Options:
 
 This gives users control over the speed/strictness trade-off.
 
-### Removed: Step 5.8b (Fresh Context at Milestone Boundaries)
-
-The automatic fresh orchestrator spawn per milestone was removed from `/colony-deploy`. Users who want fresh context per milestone should:
-- Use `/colony-patrol` for automatic fresh context
-- Or select "Continue with fresh context" at milestone checkpoints
-
 ---
 
 ## v1.4.0 (2026-01-19)
 
 ### Summary
 
-**Requirement fidelity and fresh context execution.** This release addresses the core issue of requirements being lost during task decomposition, and introduces an alternative RELF-style execution mode with fresh context per milestone.
+**Requirement fidelity improvements.** This release addresses the core issue of requirements being lost during task decomposition.
 
 ### New: Requirement Extraction (colony-mobilize.md Step 5)
 
@@ -112,28 +137,6 @@ timeout 60 bash -c 'until curl -s http://localhost:8000 > /dev/null; do sleep 1;
 npx playwright test scripts/visual-test.ts
 kill $PID1 $PID2
 ```
-
-### New: RELF-Style Fresh Context Execution
-
-Alternative execution mode using `colony-patrol` bash script:
-
-```bash
-# Fresh context per milestone, bash outer loop can't drift
-colony-patrol my-project --autonomous --verbose
-```
-
-**How it works:**
-- Bash script loops through milestones (deterministic, can't forget rules)
-- Each milestone executed via `claude -p` (fresh context)
-- `claude -p` CAN spawn sub-agents (verified: Task tool works)
-- Progress visibility via `--output-format stream-json`
-
-**Two execution modes now available:**
-
-| Mode | Command | Context | Best For |
-|------|---------|---------|----------|
-| In-session | `/colony-deploy` | Accumulates | Interactive, quick tasks |
-| Fresh context | `colony-patrol` | Per milestone | Long runs, strict adherence |
 
 ### New: Milestone CLI Commands
 
