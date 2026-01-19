@@ -1,5 +1,116 @@
 # Changelog
 
+## v1.4.0 (2026-01-19)
+
+### Summary
+
+**Requirement fidelity and fresh context execution.** This release addresses the core issue of requirements being lost during task decomposition, and introduces an alternative RELF-style execution mode with fresh context per milestone.
+
+### New: Requirement Extraction (colony-mobilize.md Step 5)
+
+Mobilization now treats the brief as a **contract, not a suggestion**:
+
+- Extracts all explicit verification requirements
+- Creates `requirements-checklist.md` mapping each requirement
+- Flags requirements that can't be automated instead of silently dropping them
+
+```markdown
+<critical>
+If the brief says "run X", there must be a task/verification that ACTUALLY RUNS X.
+NO SUBSTITUTING complex verification with simpler checks.
+</critical>
+```
+
+### New: Validation Agent (colony-mobilize.md Step 13.5)
+
+After task decomposition, a validation agent checks coverage:
+
+- Reads original brief and all task files
+- Verifies every requirement has a task or acceptance criterion
+- Flags gaps BEFORE execution begins
+- Mobilization loops until validation passes
+
+### New: Complex Verification Templates
+
+Enhanced verification command guidelines with browser/visual testing templates:
+
+```bash
+#!/bin/bash
+# Visual/Browser verification template
+npm run dev & PID1=$!
+npm run dev:next -- --port 3001 & PID2=$!
+timeout 60 bash -c 'until curl -s http://localhost:8000 > /dev/null; do sleep 1; done'
+npx playwright test scripts/visual-test.ts
+kill $PID1 $PID2
+```
+
+### New: RELF-Style Fresh Context Execution
+
+Alternative execution mode using `colony-runner` bash script:
+
+```bash
+# Fresh context per milestone, bash outer loop can't drift
+colony-runner my-project --autonomous --verbose
+```
+
+**How it works:**
+- Bash script loops through milestones (deterministic, can't forget rules)
+- Each milestone executed via `claude -p` (fresh context)
+- `claude -p` CAN spawn sub-agents (verified: Task tool works)
+- Progress visibility via `--output-format stream-json`
+
+**Two execution modes now available:**
+
+| Mode | Command | Context | Best For |
+|------|---------|---------|----------|
+| In-session | `/colony-deploy` | Accumulates | Interactive, quick tasks |
+| Fresh context | `colony-runner` | Per milestone | Long runs, strict adherence |
+
+### New: Milestone CLI Commands
+
+```bash
+colony milestone current <project>     # Get current milestone ID
+colony milestone complete? <project>   # Check if tasks are done
+colony milestone advance <project>     # Move to next milestone
+colony milestone tasks <project>       # Get task IDs in milestone
+colony next-batch <project>            # Get ready tasks (space-separated)
+colony is-complete <project>           # Check if all tasks complete
+```
+
+### Enhanced: Inspector Verification
+
+Inspector prompt now explicitly requires actual testing:
+
+```markdown
+CRITICAL: VERIFICATION MEANS ACTUALLY TESTING
+
+If the acceptance criteria says "visual tests pass with 0 diff",
+you must:
+- Run the visual test script
+- Check the output shows 0 diff
+- If diff > 0, FAIL with the actual diff count
+
+Do NOT:
+- Just check if the test script file exists
+- Substitute simpler verification
+```
+
+### Enhanced: Retry Logic
+
+Clearer failure thresholds:
+
+| Level | Threshold | Action |
+|-------|-----------|--------|
+| Per-task | 3 attempts | Mark blocked/failed |
+| Per-milestone | >50% tasks fail | STOP, ask user |
+| Session-wide | 5 consecutive failures | Circuit breaker |
+
+### Technical: Nested Task Limitation
+
+Discovered that sub-agents cannot spawn sub-agents (Task tool not available to Task-spawned agents). This is why `colony-runner` uses `claude -p` instead - each `claude -p` invocation is a fresh top-level session with full tool access.
+
+---
+
 ## v1.3.0 (2026-01-19)
 
 ### Summary

@@ -751,6 +751,210 @@ print_working_dir() {
   get_working_dir
 }
 
+# === MILESTONE MANAGEMENT ===
+
+# Get current milestone (first non-complete milestone, or "COMPLETE")
+milestone_current() {
+  if [[ $# -lt 1 ]]; then
+    echo "Usage: colony milestone current <project>" >&2
+    exit 1
+  fi
+
+  local project="$1"
+  local state_file
+  state_file=$(get_state_file "$project")
+
+  if [[ ! -f "$state_file" ]]; then
+    echo -e "${RED}No state file for project: $project${NC}" >&2
+    exit 1
+  fi
+
+  local current
+  current=$(jq -r '
+    .milestones // [] |
+    map(select(.status != "complete")) |
+    .[0].id // "COMPLETE"
+  ' "$state_file")
+
+  echo "$current"
+}
+
+# Check if current milestone is complete (all its tasks are complete)
+milestone_is_complete() {
+  if [[ $# -lt 1 ]]; then
+    echo "Usage: colony milestone complete? <project>" >&2
+    exit 1
+  fi
+
+  local project="$1"
+  local state_file
+  state_file=$(get_state_file "$project")
+
+  if [[ ! -f "$state_file" ]]; then
+    echo -e "${RED}No state file for project: $project${NC}" >&2
+    exit 1
+  fi
+
+  # Get current milestone's tasks
+  local result
+  result=$(jq -r '
+    (.milestones // []) as $milestones |
+    ($milestones | map(select(.status != "complete")) | .[0]) as $current |
+    if $current == null then
+      "true"
+    else
+      ($current.tasks // []) as $tasks |
+      if ($tasks | length) == 0 then
+        "true"
+      else
+        [.tasks[($tasks[])] | select(.status == "complete")] | length == ($tasks | length) |
+        if . then "true" else "false" end
+      end
+    end
+  ' "$state_file")
+
+  echo "$result"
+}
+
+# Advance to next milestone (mark current as complete)
+milestone_advance() {
+  if [[ $# -lt 1 ]]; then
+    echo "Usage: colony milestone advance <project>" >&2
+    exit 1
+  fi
+
+  local project="$1"
+  local state_file
+  state_file=$(get_state_file "$project")
+
+  if [[ ! -f "$state_file" ]]; then
+    echo -e "${RED}No state file for project: $project${NC}" >&2
+    exit 1
+  fi
+
+  local current
+  current=$(milestone_current "$project")
+
+  if [[ "$current" == "COMPLETE" ]]; then
+    echo "All milestones already complete"
+    return 0
+  fi
+
+  local tmp
+  tmp=$(mktemp)
+  local timestamp
+  timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+  jq --arg id "$current" --arg ts "$timestamp" '
+    .milestones = [.milestones[] | if .id == $id then .status = "complete" | .completed_at = $ts else . end] |
+    .updated_at = $ts
+  ' "$state_file" > "$tmp"
+
+  mv "$tmp" "$state_file"
+
+  local next
+  next=$(milestone_current "$project")
+  echo -e "${GREEN}Milestone $current complete.${NC} Next: $next"
+}
+
+# Get tasks for current milestone
+milestone_tasks() {
+  if [[ $# -lt 1 ]]; then
+    echo "Usage: colony milestone tasks <project>" >&2
+    exit 1
+  fi
+
+  local project="$1"
+  local state_file
+  state_file=$(get_state_file "$project")
+
+  if [[ ! -f "$state_file" ]]; then
+    echo -e "${RED}No state file for project: $project${NC}" >&2
+    exit 1
+  fi
+
+  local current
+  current=$(milestone_current "$project")
+
+  if [[ "$current" == "COMPLETE" ]]; then
+    echo "[]"
+    return 0
+  fi
+
+  jq -r --arg id "$current" '
+    .milestones[] | select(.id == $id) | .tasks // []
+  ' "$state_file"
+}
+
+# Get next batch of ready tasks (pending with dependencies met)
+next_batch() {
+  if [[ $# -lt 1 ]]; then
+    echo "Usage: colony next-batch <project> [max]" >&2
+    exit 1
+  fi
+
+  local project="$1"
+  local max="${2:-5}"
+  local state_file
+  state_file=$(get_state_file "$project")
+
+  if [[ ! -f "$state_file" ]]; then
+    echo -e "${RED}No state file for project: $project${NC}" >&2
+    exit 1
+  fi
+
+  # Get pending tasks with all dependencies complete (within current milestone)
+  local current_milestone
+  current_milestone=$(milestone_current "$project")
+
+  if [[ "$current_milestone" == "COMPLETE" ]]; then
+    echo "COMPLETE"
+    return 0
+  fi
+
+  jq -r --arg milestone "$current_milestone" --argjson max "$max" '
+    # Get tasks in current milestone
+    (.milestones[] | select(.id == $milestone) | .tasks // []) as $milestone_tasks |
+
+    # Filter to pending tasks with dependencies met
+    [.tasks | to_entries[] |
+      select(.key | IN($milestone_tasks[])) |
+      select(.value.status == "pending") |
+      select(
+        (.value.depends_on // []) as $deps |
+        ($deps | length == 0) or
+        ([$deps[] | . as $d | $root.tasks[$d].status == "complete"] | all)
+      ) |
+      .key
+    ] | .[:$max] | join(" ")
+  ' "$state_file"
+}
+
+# Check if all tasks are complete
+is_complete() {
+  if [[ $# -lt 1 ]]; then
+    echo "Usage: colony is-complete <project>" >&2
+    exit 1
+  fi
+
+  local project="$1"
+  local state_file
+  state_file=$(get_state_file "$project")
+
+  if [[ ! -f "$state_file" ]]; then
+    echo -e "${RED}No state file for project: $project${NC}" >&2
+    exit 1
+  fi
+
+  local result
+  result=$(jq -r '
+    [.tasks | to_entries[] | select(.value.status != "complete")] | length == 0 |
+    if . then "true" else "false" end
+  ' "$state_file")
+
+  echo "$result"
+}
+
 # Print help
 print_help() {
   cat << 'EOF'
@@ -779,8 +983,16 @@ State Commands:
   state list                              List all projects
   state summary <project>                 Print project summary
 
+Milestone Commands:
+  milestone current <project>     Get current milestone ID (or "COMPLETE")
+  milestone complete? <project>   Check if current milestone tasks are done
+  milestone advance <project>     Mark current milestone complete, move to next
+  milestone tasks <project>       Get task IDs in current milestone
+
 Other Commands:
   get-model <role>         Get model for role (orchestrator|worker|inspector)
+  next-batch <project>     Get next batch of ready tasks (space-separated)
+  is-complete <project>    Check if all tasks complete ("true" or "false")
   working-dir              Print configured working directory
   help                     Print this help
 
@@ -825,7 +1037,18 @@ case "${1:-help}" in
       *) echo "Usage: colony state <init|get|set|task|task-start|task-complete|task-fail|log|list|summary>" >&2; exit 1 ;;
     esac
     ;;
+  milestone)
+    case "${2:-}" in
+      current) shift 2; milestone_current "$@" ;;
+      complete\?) shift 2; milestone_is_complete "$@" ;;
+      advance) shift 2; milestone_advance "$@" ;;
+      tasks) shift 2; milestone_tasks "$@" ;;
+      *) echo "Usage: colony milestone <current|complete?|advance|tasks> <project>" >&2; exit 1 ;;
+    esac
+    ;;
   get-model) shift; get_model "$@" ;;
+  next-batch) shift; next_batch "$@" ;;
+  is-complete) shift; is_complete "$@" ;;
   working-dir) print_working_dir ;;
   help|--help|-h) print_help ;;
   *) echo "Unknown command: $1. Use 'colony help' for usage." >&2; exit 1 ;;
