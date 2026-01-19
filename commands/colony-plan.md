@@ -24,11 +24,17 @@ Create a colony project by decomposing a brief into executable tasks.
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/colony config init 2>/dev/null || true
 
-# Look for briefs
-find . -maxdepth 3 -type f \( -name "*.md" -o -name "*.txt" \) 2>/dev/null | head -20
+# Check conventional locations first (priority order)
+echo "=== .working/ (primary) ===" && ls -1 .working/*.md 2>/dev/null || true
+echo "=== docs/ ===" && ls -1 docs/*.md 2>/dev/null || true
+echo "=== root ===" && ls -1 ./*.md 2>/dev/null | grep -v -E '^\./(README|CHANGELOG|LICENSE)' || true
 ```
 
-Check: `.working/*.md`, `docs/*.md`, `$ARGUMENTS`
+**Priority order:**
+1. `$ARGUMENTS` - if user specified a path, use it
+2. `.working/*.md` - conventional location for briefs
+3. `docs/*.md` - documentation folder
+4. Root `.md` files (excluding README, CHANGELOG, LICENSE)
 
 If multiple candidates: ask user. If none: ask for path or inline description.
 
@@ -82,18 +88,78 @@ Scan brief for visual verification indicators:
 
 If found: set `verification_type: visual`, prefix criteria with `VISUAL:`.
 
-## Step 6: Analyze Parallelization
+## Step 6: Assess Complexity
 
-```bash
-grep -r "parallel" package.json .github/workflows/ 2>/dev/null | head -5
+After analyzing the brief, estimate task count before decomposition.
+
+<critical>
+This step is MANDATORY. You must estimate task count and follow the decision tree below.
+Skipping this step leads to either over-decomposition (too many small tasks) or under-decomposition (tasks too large to parallelize).
+</critical>
+
+**If estimated tasks ≤ 6:** Proceed with quality-first approach (atomic tasks).
+
+**If estimated tasks > 6:** You MUST ask user about atomicity vs speed using AskUserQuestion:
+
+```
+This brief is substantial. I estimate ~{N} tasks across {M} milestones.
+
+How should I balance atomicity vs execution speed?
+
+1. **Quality-first** (recommended for production)
+   - Atomic tasks, each independently verified
+   - Easier debugging, better recovery from failures
+   - ~{N} tasks, ~{rounds} execution rounds
+
+2. **Balanced**
+   - Consolidate tightly-coupled tasks
+   - Good middle ground
+   - ~{N*0.7} tasks
+
+3. **Speed-first** (for prototyping/experiments)
+   - Maximize consolidation
+   - Faster but larger blast radius on failure
+   - ~{N*0.5} tasks
 ```
 
-Identify:
-- Tasks that can run concurrently (different files, independent)
-- Tasks that must serialize (shared resources, dependencies)
-- Uncertain cases (ask user)
+Use AskUserQuestion. Default to Quality-first if user doesn't respond.
 
-## Step 7: Identify Milestones
+## Step 7: Design Parallel Execution
+
+**Goal:** Minimize sequential chains, maximize concurrent execution.
+
+**Process:**
+1. Identify tasks with NO dependencies (Round 1 candidates)
+2. For each subsequent task, depend on minimum required predecessors
+3. Avoid unnecessary chains (T001 → T002 → T003 when T002/T003 are independent)
+4. Group tasks touching different files - they can parallelize
+
+**Output execution rounds estimate:**
+
+```
+Execution Rounds (concurrency=5):
+Round 1: T001, T003 (no deps, different modules)
+Round 2: T002, T004 (deps satisfied, different files)
+Round 3: T005, T006 (parallel integration)
+Round 4: T007
+Round 5: T008, T009 (tests + docs, independent)
+
+Total: 5 rounds for 9 tasks
+Sequential would be: 9 rounds
+Parallelization benefit: 44% faster
+```
+
+**Anti-pattern to avoid:**
+```
+# BAD: Unnecessary chain
+T001 → T002 → T003 → T004  (serial)
+
+# GOOD: Parallel where possible
+T001 ─┬→ T002
+      └→ T003 → T004
+```
+
+## Step 8: Identify Milestones
 
 Milestones are natural review points where work can be paused, reviewed, and approved before continuing. They help break large projects into reviewable chunks.
 
@@ -127,23 +193,27 @@ Milestones are natural review points where work can be paused, reviewed, and app
 
 **Default checkpoint:** `review` (pause and ask for approval in non-autonomous mode)
 
-## Step 8: Create Project
+## Step 9: Create Project Directories
+
+Create the directory structure (but NOT state.json yet - that comes in Step 12 with bulk import):
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/colony state init {project-name}
+working_dir="${CLAUDE_PLUGIN_ROOT}/../../../.working"  # Or use colony working-dir
+mkdir -p .working/colony/{project-name}/{tasks,logs,resources,screenshots}
 ```
 
 This creates:
 ```
 .working/colony/{project}/
-├── state.json
 ├── tasks/
 ├── logs/
 ├── resources/
 └── screenshots/
 ```
 
-## Step 9: Write Context File
+**Note:** state.json is created in Step 12 via `--from plan.json` with all tasks and milestones.
+
+## Step 10: Write Context File
 
 Write `.working/colony/{project}/context.md`:
 
@@ -184,7 +254,15 @@ Captured: {timestamp}
 {Orchestrator will append user feedback and resulting subtasks here}
 ```
 
-## Step 10: Decompose into Tasks
+### Context Split Rule
+
+Keep context.md unified UNLESS both conditions are met:
+1. **Optional for ≥50% of tasks** - Extended content isn't needed by at least half the tasks
+2. **≥30 lines** - Big enough to matter for token efficiency
+
+If both met: Create `context-extended.md` and reference it from context.md.
+
+## Step 11: Decompose into Tasks
 
 <critical>
 Each task file must be SELF-CONTAINED. Workers have NO memory of:
@@ -206,10 +284,28 @@ OMIT:
 </critical>
 
 ### Task Sizing
-- 15-45 minutes each
-- One clear deliverable
-- Too large → split
-- Too small → combine
+
+**Goal: Minimize task count while maintaining parallelization opportunities.**
+
+**Why this matters:**
+- Each task has fixed overhead: worker spawn (~30s), inspector verification (~30s), state management
+- 9 tasks vs 6 tasks = 50% more overhead before any real work happens
+- Granular tasks also increase failure surface area (more chances for lint errors, retry loops)
+- The benefit of splitting is parallelization—if tasks can't run in parallel, combining them is pure gain
+
+**Decomposition principles:**
+1. **One module = one task** - Don't split types/constants/utils into separate tasks
+2. **Split only for parallelization** - If two things can't run in parallel, combine them
+3. **Split for different expertise** - Tests vs implementation vs docs can be separate
+
+**Right-sizing test:** For each task, ask "could this be combined with an adjacent task without losing parallelization?" If yes, combine.
+
+**Examples:**
+- ✅ "Create protocol module" (includes types, constants, parser, utils)
+- ❌ "Create types" + "Create constants" + "Create parser" + "Create utils" (4 tasks for one module)
+
+- ✅ "Migrate auth module to new framework" (one coherent unit)
+- ❌ "Update imports" + "Change function signatures" + "Update tests" (if all in same files)
 
 ### Task File Format
 
@@ -221,65 +317,90 @@ Write `.working/colony/{project}/tasks/T{NNN}.md`:
 ## Status
 pending
 
-## Context & Why
-{Why this task exists}
-{How it fits the broader goal}
+## Why This Task
+{Specific reason this task exists - not project background}
 
-## Design Intent
-{Philosophy for implementation}
-{User preferences - direct quotes}
-{What to AVOID}
+## What To Do
+{Concrete deliverable - be specific}
 
-## Description
-{What needs to be done}
+## What To Avoid
+{Task-specific pitfalls, anti-patterns}
 
 ## Files
 - {path/to/file1}
-- {path/to/file2}
 
 ## Acceptance Criteria
 - [ ] {Specific, verifiable}
-- [ ] VISUAL: {If needs browser check}
 
 ## Verification Command
 ```bash
-{command to verify}
+{command - see guidelines below}
 ```
 
 ## Dependencies
-{T001, T002 or "None"}
-
-## Parallel Group
-{setup | independent | tests-browser | etc.}
+{T001 or "None"}
 ```
 
-## Step 11: Update State
+**OMIT from task files** (already in context.md which workers receive):
+- Tech stack details
+- Git strategy
+- Coding standards
+- General project background
+
+### Verification Command Guidelines
+
+Verification must be achievable when the task completes. Don't reference artifacts that don't exist yet.
+
+| Task Type | Verification | Example |
+|-----------|--------------|---------|
+| New module | TypeScript compiles | `npx tsc --noEmit` |
+| New function | Module exports it | `node -e "require('./src/mod').fn"` |
+| Integration | Build succeeds | `npm run build` |
+| Integration | Existing tests pass | `npm test` |
+| Test creation | New tests pass | `npm test -- --grep "pattern"` |
+| Documentation | File has content | `test -s README.md` |
+
+**Anti-pattern:** Don't reference tests that don't exist yet. If T001 creates a parser and T008 creates tests, T001's verification should be `npx tsc --noEmit`, not `npm test -- --grep parser`.
+
+## Step 12: Write Plan File and Initialize State
+
+Write `.working/colony/{project}/plan.json` with all tasks, milestones, and config:
+
+```json
+{
+  "total_tasks": 9,
+  "tasks": {
+    "T001": {"status": "pending", "attempts": 0, "milestone": "M1"},
+    "T002": {"status": "pending", "attempts": 0, "milestone": "M1", "depends_on": ["T001"]},
+    "T003": {"status": "pending", "attempts": 0, "milestone": "M2"}
+  },
+  "milestones": [
+    {"id": "M1", "name": "Infrastructure", "tasks": ["T001", "T002"], "checkpoint": "review", "status": "pending"},
+    {"id": "M2", "name": "Implementation", "tasks": ["T003"], "checkpoint": "review", "status": "pending"}
+  ],
+  "git": {
+    "strategy": "active",
+    "branch": "feature/my-feature",
+    "commit_strategy": "phase"
+  }
+}
+```
+
+Then initialize with bulk import (one command instead of many):
 
 ```bash
-# Add each task to state
-${CLAUDE_PLUGIN_ROOT}/bin/colony state set {project} 'tasks.T001' '{"status":"pending","attempts":0,"milestone":"M1"}'
-${CLAUDE_PLUGIN_ROOT}/bin/colony state set {project} 'tasks.T002' '{"status":"pending","attempts":0,"milestone":"M1"}'
-# ...
-
-# Update total
-${CLAUDE_PLUGIN_ROOT}/bin/colony state set {project} total_tasks {count}
-
-# Set milestones
-${CLAUDE_PLUGIN_ROOT}/bin/colony state set {project} 'milestones' '[{"id":"M1","name":"{name}","tasks":["T001","T002","T003"],"checkpoint":"review","status":"pending"},{"id":"M2","name":"{name}","tasks":["T004","T005"],"checkpoint":"review","status":"pending"}]'
-
-# Set git config if applicable
-${CLAUDE_PLUGIN_ROOT}/bin/colony state set {project} 'git.strategy' '"active"'
-${CLAUDE_PLUGIN_ROOT}/bin/colony state set {project} 'git.branch' '"{branch-name}"'
-${CLAUDE_PLUGIN_ROOT}/bin/colony state set {project} 'git.commit_strategy' '"phase"'
+${CLAUDE_PLUGIN_ROOT}/bin/colony state init {project} --from .working/colony/{project}/plan.json
 ```
 
-## Step 12: Copy Brief
+This is atomic - either all state is created or none. Reduces agent overhead and errors.
+
+## Step 13: Copy Brief
 
 ```bash
 cp {brief-path} .working/colony/{project}/resources/original-brief.md
 ```
 
-## Step 13: Summary
+## Step 14: Summary
 
 ```markdown
 ## Project Created: {project-name}
@@ -296,6 +417,14 @@ Type: {implementation | research}
 | M2: {name} | T004-T007 | review |
 
 ### Execution Plan
+
+```
+Estimated rounds (concurrency=5):
+Round 1: T001, T003 (parallel, no deps)
+Round 2: T002, T004 (parallel, deps satisfied)
+...
+Total: {X} rounds for {Y} tasks ({Z}% parallelization benefit)
+```
 
 **M1 - {name}:**
 - T001: {name}

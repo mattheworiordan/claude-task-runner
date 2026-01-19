@@ -10,6 +10,8 @@
 #   config path              Print config file path
 #
 #   state init <project>                    Initialize state.json for project
+#   state init <project> --from <file>      Initialize from plan.json (bulk import)
+#   state init <project> --from <f> --force Overwrite existing state with plan
 #   state get <project> [key]               Get state value (dot notation: tasks.T001.status)
 #   state set <project> <key> <value>       Set state value
 #   state task <project> <id> <status>      Update task status (pending|running|complete|failed|blocked)
@@ -85,12 +87,9 @@ config_init() {
 {
   "working_dir": ".working",
   "models": {
-    "planning": "inherit",
+    "orchestrator": "haiku",
     "worker": "inherit",
     "inspector": "haiku"
-  },
-  "notifications": {
-    "model_override_shown": false
   }
 }
 EOF
@@ -148,11 +147,37 @@ config_set() {
 # Initialize state for a project
 state_init() {
   if [[ $# -lt 1 ]]; then
-    echo "Usage: colony state init <project>" >&2
+    echo "Usage: colony state init <project> [--from <plan.json>] [--force]" >&2
     exit 1
   fi
 
   local project="$1"
+  local from_file=""
+  local force=false
+
+  # Parse flags
+  shift
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --from)
+        if [[ $# -lt 2 ]]; then
+          echo -e "${RED}Error: --from requires a file path${NC}" >&2
+          exit 1
+        fi
+        from_file="$2"
+        shift 2
+        ;;
+      --force)
+        force=true
+        shift
+        ;;
+      *)
+        echo -e "${RED}Unknown option: $1${NC}" >&2
+        exit 1
+        ;;
+    esac
+  done
+
   local state_file
   state_file=$(get_state_file "$project")
   local state_dir
@@ -164,14 +189,59 @@ state_init() {
   mkdir -p "$state_dir/resources"
   mkdir -p "$state_dir/screenshots"
 
-  if [[ -f "$state_file" ]]; then
-    echo -e "${YELLOW}State already exists for $project${NC}"
+  if [[ -f "$state_file" && "$force" != "true" ]]; then
+    echo -e "${YELLOW}State already exists for $project. Use --force to overwrite.${NC}"
     return 0
+  fi
+
+  # If force and state exists, remove it first
+  if [[ -f "$state_file" && "$force" == "true" ]]; then
+    rm "$state_file"
   fi
 
   local timestamp
   timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
+  # If --from flag provided, import from plan file
+  if [[ -n "$from_file" ]]; then
+    if [[ ! -f "$from_file" ]]; then
+      echo -e "${RED}Error: Plan file not found: $from_file${NC}" >&2
+      exit 1
+    fi
+
+    # Validate JSON
+    if ! jq empty "$from_file" 2>/dev/null; then
+      echo -e "${RED}Error: Invalid JSON in plan file${NC}" >&2
+      exit 1
+    fi
+
+    # Create state by merging plan with defaults
+    jq --arg project "$project" --arg ts "$timestamp" '
+      {
+        project_name: $project,
+        created_at: $ts,
+        updated_at: $ts,
+        total_tasks: (.total_tasks // (.tasks | length)),
+        concurrency: (.concurrency // 5),
+        autonomous_mode: (.autonomous_mode // false),
+        git: (.git // {strategy: "not_applicable"}),
+        milestones: (.milestones // []),
+        tasks: (.tasks // {}),
+        execution_log: []
+      }
+    ' "$from_file" > "$state_file"
+
+    local task_count
+    task_count=$(jq '.tasks | length' "$state_file")
+    local milestone_count
+    milestone_count=$(jq '.milestones | length' "$state_file")
+
+    echo -e "${GREEN}Initialized $project from plan: $task_count tasks, $milestone_count milestones${NC}"
+    echo "$state_file"
+    return 0
+  fi
+
+  # Default initialization (no --from)
   cat > "$state_file" << EOF
 {
   "project_name": "$project",
@@ -240,13 +310,36 @@ state_set() {
   local timestamp
   timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-  # Try to parse value as JSON, fallback to string
-  if echo "$value" | jq . &>/dev/null; then
-    jq ".$key = $value | .updated_at = \"$timestamp\"" "$state_file" > "$tmp"
+  # Handle task paths with subtask IDs (e.g., tasks.T001.1 -> .tasks["T001.1"])
+  # Pattern: tasks.TXXX.N where N is a number (subtask)
+  local jq_expr
+  if [[ "$key" =~ ^tasks\.(T[0-9]+)\.([0-9]+)$ ]]; then
+    # Subtask ID like T001.1 - use bracket notation
+    local task_id="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+    if echo "$value" | jq . &>/dev/null; then
+      jq_expr=".tasks[\"$task_id\"] = $value | .updated_at = \"$timestamp\""
+    else
+      jq_expr=".tasks[\"$task_id\"] = \"$value\" | .updated_at = \"$timestamp\""
+    fi
+  elif [[ "$key" =~ ^tasks\.(T[0-9]+)\.([0-9]+)\.(.+)$ ]]; then
+    # Subtask property like tasks.T001.1.status
+    local task_id="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+    local prop="${BASH_REMATCH[3]}"
+    if echo "$value" | jq . &>/dev/null; then
+      jq_expr=".tasks[\"$task_id\"].$prop = $value | .updated_at = \"$timestamp\""
+    else
+      jq_expr=".tasks[\"$task_id\"].$prop = \"$value\" | .updated_at = \"$timestamp\""
+    fi
   else
-    jq ".$key = \"$value\" | .updated_at = \"$timestamp\"" "$state_file" > "$tmp"
+    # Standard dotted path
+    if echo "$value" | jq . &>/dev/null; then
+      jq_expr=".$key = $value | .updated_at = \"$timestamp\""
+    else
+      jq_expr=".$key = \"$value\" | .updated_at = \"$timestamp\""
+    fi
   fi
 
+  jq "$jq_expr" "$state_file" > "$tmp"
   mv "$tmp" "$state_file"
 }
 
@@ -512,7 +605,7 @@ print_reminders() {
       .tasks as $tasks |
       all($tasks[]; . as $t | $root.tasks[$t].status == "complete")
     ) | .id
-  ' "$state_file" 2>/dev/null | head -1)
+  ' "$state_file" 2>/dev/null | head -1 || true)
 
   if [[ -n "$pending_milestone" && "$pending_milestone" != "null" ]]; then
     if [[ "$autonomous" == "false" ]]; then
@@ -566,20 +659,9 @@ get_model() {
   local model
   model=$(jq -r ".models.$role // \"inherit\"" "$CONFIG_FILE")
 
-  # Check if we should show override notification
+  # Always notify when using explicit model (not user's session default)
   if [[ "$model" != "inherit" ]]; then
-    local shown
-    shown=$(jq -r '.notifications.model_override_shown // false' "$CONFIG_FILE")
-
-    if [[ "$shown" != "true" ]]; then
-      echo -e "${YELLOW}Note: Using $model for $role (configured in ~/.colony/config.json)${NC}" >&2
-
-      # Mark as shown
-      local tmp
-      tmp=$(mktemp)
-      jq '.notifications.model_override_shown = true' "$CONFIG_FILE" > "$tmp"
-      mv "$tmp" "$CONFIG_FILE"
-    fi
+    echo -e "${YELLOW}Note: $role using $model (configured in ~/.colony/config.json)${NC}" >&2
   fi
 
   echo "$model"
@@ -605,6 +687,8 @@ Config Commands:
 
 State Commands:
   state init <project>                    Initialize state for project
+  state init <project> --from <plan.json> Initialize from plan file (bulk import)
+  state init <project> --from <f> --force Overwrite existing state with plan
   state get <project> [key]               Get state value (dot notation supported)
   state set <project> <key> <value>       Set state value
   state task <project> <id> <status>      Update task status
@@ -616,7 +700,7 @@ State Commands:
   state summary <project>                 Print project summary
 
 Other Commands:
-  get-model <role>         Get model for role (planning|worker|inspector)
+  get-model <role>         Get model for role (orchestrator|worker|inspector)
   working-dir              Print configured working directory
   help                     Print this help
 

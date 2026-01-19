@@ -30,10 +30,28 @@ Colony turns Claude Code into a parallel task execution engine with independent 
 
 ## Why Colony Wins
 
+### v1.2.0: Same Speed, Dramatically Better Quality
+
+Measured on the same task ([Kitty Keyboard Protocol](https://github.com/vadimdemedes/ink/issues/824) implementation), same codebase, same starting point:
+
+| Metric | Ralph | Colony v1.2 | Winner |
+|--------|-------|-------------|--------|
+| **Runtime** | 12m 39s | ~12 min | Tie |
+| **Lint Errors** | 419 | 0 | **Colony** |
+| **Lines of Code** | 537 | 165 | **Colony** (3.3x leaner) |
+| **PR Ready?** | No (needs cleanup) | Yes | **Colony** |
+
+**The real comparison:** Ralph's 12-minute run produces code needing ~1 hour of cleanup. Colony's 12-minute run produces code ready to merge.
+
+> 📊 **Reproducible benchmarks**: See [`benchmarks/`](./benchmarks/) for the test brief, methodology, and step-by-step reproduction instructions.
+
+### Feature Comparison
+
 | Capability | Traditional AI | Ralph | Colony |
 |------------|----------------|-------|--------|
 | **Context** | Drifts after 10+ exchanges | Full reset each iteration | Fresh context per task |
 | **Verification** | "Done!" (it wasn't) | Checks its own homework | Independent inspector |
+| **Code Quality** | Variable | 419 lint errors | **0 lint errors** |
 | **Speed** | One thing at a time | Single-threaded | Intelligent parallelization |
 | **Oversight** | All or nothing | Autonomous only | Human-in-loop or autonomous |
 | **Git workflow** | Manual | Manual | Automatic branch + commits |
@@ -307,13 +325,27 @@ When you run `/colony-plan`, it creates:
 
 **Colony's answer**: Independent verification. A separate inspector agent—with fresh context and no ego investment—verifies every completion. It catches workarounds, missing criteria, and "works on my machine" claims.
 
-### Head-to-Head
+### Head-to-Head (v1.2.0 Benchmarks)
+
+Both approaches ran the same task: implement [Kitty Keyboard Protocol](https://github.com/vadimdemedes/ink/issues/824) for the [Ink](https://github.com/vadimdemedes/ink) React CLI framework.
+
+| Metric | Colony | Ralph |
+|--------|--------|-------|
+| **Runtime** | ~12 min | 12m 39s |
+| **Lint Errors** | **0** | 419 |
+| **Lines of Code** | **165** | 537 |
+| **Time to Merge** | **12 min** | ~72 min (with cleanup) |
+
+> See [`benchmarks/v1.2-results.md`](./benchmarks/v1.2-results.md) for detailed methodology and quality scoring.
+
+### Feature Comparison
 
 | Capability | Colony | Ralph |
 |------------|--------|------|
 | **Parallelization** | Intelligent—analyzes dependencies, asks when uncertain | Single-threaded |
 | **Execution modes** | Human-in-the-loop or fully autonomous | Single mode |
 | **Verification** | Independent inspector agent | Self-check (same model) |
+| **Code Quality** | Linter integrated, 0 errors | No lint check, 419 errors |
 | **Context** | Fresh per-task | Full reset each iteration |
 | **Git workflow** | Branch strategy, smart commits, conflict prevention | Manual |
 | **Visual testing** | Built-in screenshot verification | Manual |
@@ -323,23 +355,28 @@ When you run `/colony-plan`, it creates:
 ### When to Use Each
 
 **Choose Colony when:**
+- You need production-ready code (0 lint errors)
 - Work can be parallelized (most real projects)
 - You need proof that tasks are actually complete
 - Multiple people need to understand what happened
-- You're building production code, not prototyping
+- You're building code that goes straight to PR
 
 **Choose Ralph when:**
 - Tasks are strictly sequential
 - You want zero setup (just a prompt pattern)
-- You're exploring without clear requirements
+- You're exploring/prototyping (quality doesn't matter yet)
+- You have time for manual cleanup afterward
 
 ### The Bottom Line
 
 Ralph proved autonomous AI coding works. Colony makes it production-ready.
 
-**Speed**: Parallelization beats sequential iteration.
-**Trust**: Independent verification beats self-assessment.
-**Recovery**: Structured state beats hope.
+**Speed**: Same execution time (~12 min).
+**Quality**: 0 lint errors vs 419. 3.3x less code for same feature.
+**Trust**: Independent verification catches what self-assessment misses.
+**Time to merge**: Colony code is PR-ready. Ralph code needs cleanup.
+
+> 🧪 **Try it yourself**: The [`benchmarks/`](./benchmarks/) folder contains everything you need to reproduce this comparison.
 
 ## Configuration
 
@@ -351,21 +388,42 @@ Colony can be configured via `~/.colony/config.json`. This file is created autom
 {
   "working_dir": ".working",
   "models": {
-    "planning": "inherit",
+    "orchestrator": "haiku",
     "worker": "inherit",
     "inspector": "haiku"
   }
 }
 ```
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `working_dir` | `.working` | Directory for Colony project files |
-| `models.planning` | `inherit` | Model for planning phase (`inherit`, `sonnet`, `opus`, `haiku`) |
-| `models.worker` | `inherit` | Model for worker agents |
-| `models.inspector` | `haiku` | Model for inspector agents |
+### Model Roles
 
-**Note:** `inherit` means the model is determined by your Claude Code session. The inspector defaults to `haiku` for efficiency since verification is simpler than implementation.
+| Role | What it does | Default | Recommendation |
+|------|--------------|---------|----------------|
+| `orchestrator` | Coordinates tasks, manages state, handles checkpoints | `haiku` | `haiku` - coordination is mechanical |
+| `worker` | Implements code, runs tests, creates files | `inherit` | `inherit` - needs full reasoning power |
+| `inspector` | Verifies task completion, checks criteria | `haiku` | `haiku` - verification is simpler |
+
+### Model Options
+
+- **`inherit`** - Uses your Claude Code session's model (Opus, Sonnet, etc.)
+- **`haiku`** - Fast and cheap, good for mechanical tasks
+- **`sonnet`** - Balanced capability and speed
+- **`opus`** - Maximum capability, slower
+
+### How It Works
+
+**Default behavior** (`orchestrator: haiku`, `worker: inherit`):
+- A Haiku sub-agent coordinates task execution (cheap)
+- Workers use your session model (read from Claude Code settings)
+- `worker: inherit` resolves to your `/model` setting (e.g., Opus)
+
+**How inheritance works:** Before delegating to Haiku, Colony reads your session model from `~/.claude/settings.json` (set via `/model` command). When `worker: inherit`, this resolved model (e.g., "opus") is passed explicitly to the Haiku orchestrator, which then spawns workers with that model.
+
+| orchestrator | worker | Behavior |
+|--------------|--------|----------|
+| `inherit` | any | Session runs orchestration directly |
+| `haiku` | `inherit` | Haiku orchestrates, workers use session model (e.g., Opus) |
+| `haiku` | `sonnet` | Haiku orchestrates, workers use Sonnet |
 
 ### CLI Tool (Internal)
 

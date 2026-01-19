@@ -39,6 +39,61 @@ Your context is precious. Spawn workers for implementation. Always.
 [[ -x "${CLAUDE_PLUGIN_ROOT}/bin/colony" ]] && echo "colony CLI ready" || echo "ERROR: colony CLI not found"
 ```
 
+## Step 0.5: Check Orchestrator Delegation
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/colony config init 2>/dev/null || true
+orchestrator_model=$(${CLAUDE_PLUGIN_ROOT}/bin/colony get-model orchestrator)
+worker_model=$(${CLAUDE_PLUGIN_ROOT}/bin/colony get-model worker)
+inspector_model=$(${CLAUDE_PLUGIN_ROOT}/bin/colony get-model inspector)
+
+# Get session model from Claude Code settings (for worker inheritance)
+# Model is always in ~/.claude/settings.json (main Claude config, not CLAUDE_CONFIG_DIR)
+session_model=$(jq -r '.model // "sonnet"' "$HOME/.claude/settings.json" 2>/dev/null || echo "sonnet")
+```
+
+**Resolve worker model:**
+- If `worker_model` is "inherit" → use `session_model` (e.g., "opus")
+- Otherwise use the explicit `worker_model`
+
+**Delegation decision:**
+
+| orchestrator | Action |
+|--------------|--------|
+| `inherit` | Run in session (no delegation) → Step 1 |
+| `haiku`/`sonnet`/`opus` | Delegate to sub-orchestrator → spawn below |
+
+**If delegating** (orchestrator is NOT "inherit"):
+
+Spawn a sub-agent with the orchestrator model. Pass resolved worker model explicitly:
+
+```
+Task(
+  subagent_type: "general-purpose",
+  model: "{orchestrator_model}",  // e.g., "haiku"
+  prompt: "Run Colony orchestration for project: {$ARGUMENTS}
+
+  CRITICAL: Read and follow the FULL instructions in:
+  {CLAUDE_PLUGIN_ROOT}/commands/colony-run.md
+
+  Start from Step 1 (skip Step 0 and 0.5 - you are the delegated orchestrator).
+
+  Configuration for this run:
+  - Worker model: {resolved_worker_model} (e.g., opus)
+  - Inspector model: {inspector_model} (e.g., haiku)
+  - CLI path: {CLAUDE_PLUGIN_ROOT}/bin/colony
+
+  Follow the milestone checkpoint format EXACTLY as specified in the prompt file.
+  This includes: progress bars, 'How to verify' sections, proposed commits, etc."
+)
+```
+
+Then STOP - the sub-agent handles everything. Return its result to the user.
+
+**If NOT delegating** (orchestrator=inherit):
+
+Continue to Step 1 and run orchestration directly in this session.
+
 ## Step 1: Initialize
 
 ```bash
@@ -140,18 +195,14 @@ Select up to `{concurrency}` ready tasks.
 
 For each task:
 
-a) **Mark running:**
+a) **Mark running and get model:**
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/colony state task-start {project} {task-id}
-${CLAUDE_PLUGIN_ROOT}/bin/colony state log {project} "task_started" '{"task": "{task-id}"}'
+worker_model=$(${CLAUDE_PLUGIN_ROOT}/bin/colony get-model worker)
+${CLAUDE_PLUGIN_ROOT}/bin/colony state log {project} "task_started" '{"task": "{task-id}", "model": "'"$worker_model"'"}'
 ```
 
-b) **Get model for worker:**
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/colony get-model worker
-```
-
-c) **Spawn worker sub-agent** with `subagent_type="colony:worker"`:
+b) **Spawn worker sub-agent** with `subagent_type="colony:worker"` and model from config:
 
 ```
 Execute this task following the project context.
@@ -185,11 +236,14 @@ d) If parallel batch: spawn all workers together, wait for all.
 
 **If DONE:**
 
-Get inspector model and spawn inspector with `subagent_type="colony:inspector"`:
+Get inspector model and log it:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/colony get-model inspector
+inspector_model=$(${CLAUDE_PLUGIN_ROOT}/bin/colony get-model inspector)
+${CLAUDE_PLUGIN_ROOT}/bin/colony state log {project} "inspection_started" '{"task": "{task-id}", "model": "'"$inspector_model"'"}'
 ```
+
+Spawn inspector with `subagent_type="colony:inspector"` and model from config:
 
 ```
 Verify this task was completed correctly.
@@ -205,7 +259,14 @@ Task file: .working/colony/{project}/tasks/{task-id}.md
 Worker summary: {one-line from worker}
 Files changed: {list}
 
-Verify: run verification command, check criteria, inspect files.
+Verify:
+1. Run verification command from task file
+2. Run linter on changed files (e.g., `npx xo {files}` or project lint command)
+3. Check all acceptance criteria
+4. Inspect file contents match requirements
+
+IMPORTANT: Only verify files listed above. Ignore other files that may have been
+created by parallel tasks - they will be verified separately.
 
 ═══════════════════════════════════════════════════════════
 
@@ -218,7 +279,7 @@ or
 **If PASS:** Validate artifacts exist, then:
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/colony state task-complete {project} {task-id}
-${CLAUDE_PLUGIN_ROOT}/bin/colony state log {project} "task_complete" '{"task": "{task-id}"}'
+${CLAUDE_PLUGIN_ROOT}/bin/colony state log {project} "task_complete" '{"task": "{task-id}", "worker_model": "'"$worker_model"'", "inspector_model": "'"$inspector_model"'"}'
 ```
 
 **If FAIL:**
@@ -256,10 +317,11 @@ ${CLAUDE_PLUGIN_ROOT}/bin/colony state task {project} {dependent-id} blocked
 
 ### 5.8: Progress Report
 
-After each batch:
+After each batch, show progress with a proportional bar:
+
 ```
 Progress: {project}
-████████████░░░░ 60% (12/20)
+████████████░░░░░░░░ 60% (12/20)
 
 This round:
 ✅ T003: Add auth - PASSED
@@ -267,6 +329,11 @@ This round:
 
 Next: T006, T007 (ready)
 ```
+
+**Progress bar calculation:** 20 characters total. Filled = (complete/total) × 20.
+- 44% (11/25) → `█████████░░░░░░░░░░░` (9 filled, 11 empty)
+- 60% (12/20) → `████████████░░░░░░░░` (12 filled, 8 empty)
+- 100% → `████████████████████`
 
 ### 5.8a: Milestone Checkpoint
 
@@ -301,17 +368,59 @@ ${CLAUDE_PLUGIN_ROOT}/bin/colony state set {project} 'milestones[0].status' '"co
 
 **Non-autonomous mode (default):**
 
+First, gather context for the user to review:
+
+```bash
+# Get files changed
+git status --porcelain
+
+# Get diff summary
+git diff --stat HEAD
+```
+
+Then present a complete checkpoint summary:
+
 ```
 ═══════════════════════════════════════════════════════════════
 MILESTONE COMPLETE: M1 - Infrastructure Setup
 ═══════════════════════════════════════════════════════════════
 
-Tasks completed: T001, T002, T003 (all passed)
+Tasks completed:
+  ✅ T001: {name} - {one-line summary from log}
+  ✅ T002: {name} - {one-line summary from log}
+  ✅ T003: {name} - {one-line summary from log}
 
-Ready to proceed to M2 - Core Implementation?
+Files changed:
+  {git diff --stat output, e.g.:}
+  src/kitty-protocol.ts   | 120 ++++++++++++
+  src/parse-keypress.ts   |  45 +++--
+  3 files changed, 165 insertions(+), 12 deletions(-)
+
+How to verify (pick relevant ones):
+  • Web app: Visit http://localhost:3000/{path} - you should see {expected}
+  • API: Run `curl localhost:3000/api/{endpoint}` - expect {response}
+  • CLI: Run `{command}` - should output {expected}
+  • Tests: `npm test` shows {N} passing
+  • Visual: Look for {specific UI element} in {location}
+
+Out of scope (don't worry about):
+  • {Thing that looks broken but isn't part of this milestone}
+  • {Known issue being addressed in later milestone}
+
+Proposed commit (if commit_strategy is phase):
+  feat({scope}): {milestone description}
+
+  - T001: {summary}
+  - T002: {summary}
+  - T003: {summary}
+
+Next milestone: M2 - Core Implementation
+  Ready tasks: T004, T005 (can run in parallel)
+
+═══════════════════════════════════════════════════════════════
 ```
 
-Use AskUserQuestion to get explicit approval before continuing.
+Use AskUserQuestion with options: "Approve & Continue", "Review files first", "Pause".
 
 **Autonomous mode:** Log completion, proceed to next milestone automatically.
 
@@ -321,9 +430,19 @@ Skip if `git.strategy == "not_applicable"`.
 
 Based on `commit_strategy`:
 - **task**: Commit after each verified task
-- **phase**: Commit when parallel_group completes
+- **phase**: Commit at milestone boundaries (after 5.8a milestone checkpoint)
 - **end**: No commits during execution
 - **manual**: Prompt user after each phase
+
+**For phase/task commits, execute:**
+```bash
+git add -A
+git commit -m "feat({scope}): {description}
+
+Tasks: {list of completed tasks}
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
+```
 
 ### 5.10: Checkpoint
 
