@@ -76,40 +76,34 @@ Created: {timestamp}
 
 ## Response Format
 
-Keep responses MINIMAL. Details go in log file.
+<critical>
+ULTRA-COMPACT RESPONSES ONLY.
+All details go in log file - orchestrator context is precious.
+</critical>
 
 ### DONE
 ```json
-{
-  "status": "DONE",
-  "summary": "{one line}",
-  "files_changed": ["path/file1", "path/file2"],
-  "log_path": ".working/colony/{project}/logs/{task-id}_LOG.md"
-}
+{"status": "DONE", "summary": "<80 chars max", "files": ["file1.ts", "file2.ts"]}
 ```
+
+- `summary`: One line, max 80 characters
+- `files`: Just filenames, not full paths
 
 ### PARTIAL
 ```json
-{
-  "status": "PARTIAL",
-  "summary": "{what's done vs not}",
-  "completed": ["criterion 1"],
-  "not_completed": ["criterion 2 - reason"],
-  "files_changed": [...],
-  "log_path": "..."
-}
+{"status": "PARTIAL", "summary": "<80 chars", "done": ["criterion1"], "blocked": ["criterion2"]}
 ```
 
 ### STUCK
 ```json
-{
-  "status": "STUCK",
-  "reason": "{specific reason}",
-  "attempted": ["what tried"],
-  "need": "{what would unblock}",
-  "log_path": "..."
-}
+{"status": "STUCK", "reason": "<80 chars", "need": "<what would unblock>"}
 ```
+
+**DO NOT include:**
+- `log_path` (orchestrator knows it)
+- `learnings` in response (put in log file instead)
+- Full file paths (just filenames)
+- Verbose explanations (put in log)
 
 ## Forbidden Actions
 

@@ -78,28 +78,28 @@ ${CLAUDE_PLUGIN_ROOT}/bin/colony state list
 
 If `$ARGUMENTS` specifies a project, use that. If one project exists, use it. If multiple, ask. If none: `"No projects. Use /colony-mobilize to create one."`
 
-## Step 2: Load State
+## Step 2: Load State (TOKEN-OPTIMIZED)
+
+<critical>
+DO NOT use `colony state get {project}` - it returns 1000+ lines.
+Use the optimized commands below instead.
+</critical>
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/colony state get {project}
-${CLAUDE_PLUGIN_ROOT}/bin/colony state get {project} tasks
+# Get minimal initialization overview (replaces full state dump)
+${CLAUDE_PLUGIN_ROOT}/bin/colony init-overview {project}
 ```
 
-Read `context.md` directly for project rules:
-```
-.working/colony/{project}/context.md
-```
+This returns ~15 lines with: project name, task counts, milestone count, git strategy, context path.
+
+**DO NOT read context.md** - workers will read it via task-bundle.
 
 ### 2.1: Resume Check
 
+The `loop-state` command (Step 5.0) includes stuck tasks. If any are stuck >30 min:
 ```bash
-# Check for tasks stuck in "running"
-${CLAUDE_PLUGIN_ROOT}/bin/colony state get {project} tasks | jq '[to_entries[] | select(.value.status == "running")]'
+${CLAUDE_PLUGIN_ROOT}/bin/colony state task {project} {id} pending
 ```
-
-If tasks are "running":
-- Running >30 min: `${CLAUDE_PLUGIN_ROOT}/bin/colony state task {project} {id} pending`
-- Running <30 min: Spawn worker to continue
 
 ## Step 3: Git Pre-Flight (if applicable)
 
@@ -143,139 +143,123 @@ The CLI is your source of truth - re-read it every time.
 REPEAT until all tasks complete/failed/blocked:
 ```
 
-### 5.0: Loop Start (EVERY ITERATION)
+### 5.0: Loop Start (EVERY ITERATION) - TOKEN-OPTIMIZED
 
-**Always re-read state at the start of each iteration:**
+<critical>
+USE SINGLE COMMAND. Do not call multiple state queries.
+</critical>
 
 ```bash
-# FRESH STATE - don't rely on what you remember
-${CLAUDE_PLUGIN_ROOT}/bin/colony state summary {project}
-
-# Get counts for decisions
-task_stats=$(${CLAUDE_PLUGIN_ROOT}/bin/colony state get {project} tasks | jq '{
-  complete: [to_entries[] | select(.value.status == "complete")] | length,
-  failed: [to_entries[] | select(.value.status == "failed")] | length,
-  blocked: [to_entries[] | select(.value.status == "blocked")] | length,
-  pending: [to_entries[] | select(.value.status == "pending")] | length,
-  running: [to_entries[] | select(.value.status == "running")] | length
-}')
-completed_count=$(echo "$task_stats" | jq '.complete')
+# SINGLE COMMAND replaces: state summary + state get tasks + next-batch
+${CLAUDE_PLUGIN_ROOT}/bin/colony loop-state {project}
 ```
 
-**State validation:** If `running` > 0 and they've been running >30 min, reset them:
-```bash
-# Check for stuck tasks (running >30 min) - handled by Resume Check in Step 2.1
+**Returns minimal JSON (~15 lines):**
+```json
+{
+  "counts": {"pending": 5, "running": 0, "complete": 12, "failed": 0, "blocked": 1},
+  "milestone": {"id": "M3", "name": "Content Routing", "tasks_done": 5, "tasks_total": 7},
+  "ready": ["T019", "T020"],
+  "stuck": [],
+  "rule_echo": true
+}
 ```
+
+**Use these fields:**
+- `counts` - For progress reporting
+- `milestone` - Current milestone info
+- `ready` - Task IDs to execute (replaces next-batch)
+- `stuck` - Tasks to reset (running >30 min)
+- `rule_echo` - If true, echo the core rules (every 3 tasks)
+
+**If `stuck` is non-empty:** Reset those tasks to pending before continuing.
 
 ### 5.0a: Rule Echo (Every 3 Tasks)
 
-**If `completed_count` is a multiple of 3 (3, 6, 9, ...), echo the core rule:**
+**If `rule_echo` is true in loop-state output, echo the core rule:**
 
 ```
 ════════════════════════════════════════════════════════════════
-RULE REFRESH (${completed_count} tasks complete)
+RULE REFRESH (${counts.complete} tasks complete)
 
 YOU ARE AN ORCHESTRATOR, NOT A WORKER.
-• Read state → Pick task → Spawn worker → Process result → Loop
-• NEVER implement inline, NEVER debug, NEVER "quick fix"
-• If you're about to read code or run tests: STOP → spawn worker
+• loop-state → Pick task → task-bundle → Spawn worker → Loop
+• NEVER read files, NEVER implement inline, NEVER "quick fix"
+• Your context is precious. Workers have fresh context.
 
-Your context should stay clean for coordination.
-Workers have fresh context for implementation.
+TOKEN DISCIPLINE:
+• Use loop-state (not state get/summary)
+• Use task-bundle (not file reads)
+• Use inspect-bundle (not manual diff)
 ════════════════════════════════════════════════════════════════
 ```
 
-### 5.1: Get Ready Tasks (CLI decides)
+### 5.1: Get Ready Tasks (from loop-state)
 
-```bash
-ready_tasks=$(${CLAUDE_PLUGIN_ROOT}/bin/colony next-batch {project} {concurrency})
-```
+**Already have this from Step 5.0:**
 
-This returns space-separated task IDs that are ready. **CLI handles parallelization logic** - it considers:
+The `ready` array in loop-state output contains task IDs ready to execute.
+**CLI handles parallelization logic** - it considers:
 - Dependencies (only returns tasks with deps met)
 - Serial groups (won't return conflicting tasks)
 - File conflicts (encodes in task definitions)
 
 **You just execute what it gives you.** Don't second-guess the CLI.
 
-### 5.2: Check Completion
+Do NOT call `next-batch` separately - it's included in `loop-state`.
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/colony is-complete {project}
-```
+### 5.2: Check Completion (from loop-state)
 
-Returns `true` or `false`.
+**Use the loop-state output, not a separate call:**
 
-- **If `true` or `ready_tasks` is empty:** Check why
-  - All complete → Step 6
-  - Some failed/blocked → Step 6 with summary
-  - Pending but deps not met → Wait or Step 6
+- **If `ready` is empty AND `counts.pending` is 0:** All complete → Step 6
+- **If `ready` is empty AND `counts.failed` > 0:** Some failed → Step 6 with summary
+- **If `ready` is empty AND `counts.pending` > 0:** Deps not met → Wait or Step 6
+- **If `ready` has tasks:** Continue to 5.3
 
-- **If `false` and tasks ready:** Continue to 5.3
+Do NOT call `is-complete` separately - derive from loop-state counts.
 
-### 5.3: Execute Task Batch
+### 5.3: Execute Task Batch (TOKEN-OPTIMIZED)
 
-For each task in `ready_tasks`:
+For each task in `ready` array:
 
-a) **Mark running and get model:**
+a) **Mark running and get bundle:**
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/colony state task-start {project} {task-id}
 worker_model=$(${CLAUDE_PLUGIN_ROOT}/bin/colony get-model worker)
-${CLAUDE_PLUGIN_ROOT}/bin/colony state log {project} "task_started" '{"task": "{task-id}", "model": "'"$worker_model"'"}'
+
+# GET COMPLETE BUNDLE - DO NOT READ FILES MANUALLY
+task_bundle=$(${CLAUDE_PLUGIN_ROOT}/bin/colony task-bundle {project} {task-id})
 ```
 
-b) **Get git context for worker:**
-```bash
-# Recent commits for context (helps worker understand recent changes)
-git_history=$(git log --oneline -10 2>/dev/null || echo "No git history")
+<critical>
+DO NOT read task files, context.md, LEARNINGS.md, or git history manually.
+The task-bundle command includes everything the worker needs.
+Pass the bundle directly to the worker prompt.
+</critical>
 
-# Check if LEARNINGS.md exists
-learnings_file=".working/colony/{project}/LEARNINGS.md"
-if [[ -f "$learnings_file" ]]; then
-  learnings=$(cat "$learnings_file")
-else
-  learnings="No learnings yet."
-fi
-```
-
-c) **Spawn worker sub-agent** with `subagent_type="colony:worker"` and model from config:
+b) **Spawn worker sub-agent** with `subagent_type="colony:worker"` and model from config:
 
 ```
 Execute this task following the project context.
 
-═══════════════════════════════════════════════════════════
-TASK BUNDLE
-═══════════════════════════════════════════════════════════
-
-## Logging
-- Attempt: {attempt} of 3
-- Log Path: .working/colony/{project}/logs/{task-id}_LOG.md
-
-## Task
-{Content of tasks/{task-id}.md}
-
-## Project Context (condensed if >100 lines)
-{Content of context.md}
-
-## Recent Git History (for context)
-{git_history}
-
-## Project Learnings (patterns discovered by previous tasks)
-{learnings}
-
-═══════════════════════════════════════════════════════════
-
-IMPORTANT: Write your work log to the Log Path above using the Write tool.
-Include: what you did, files changed, any patterns or conventions you discovered.
-
-Read source files using Read tool. Complete and respond:
-
-{"status": "DONE", "summary": "...", "files_changed": [...], "learnings": ["pattern or convention discovered"]}
-or
-{"status": "STUCK", "reason": "...", "attempted": [...], "need": "..."}
+{task_bundle}
 ```
 
-d) If parallel batch: spawn all workers together, wait for all.
+That's it. The bundle includes:
+- Task definition
+- Project context (key sections)
+- Git history
+- Learnings
+- Retry context (if applicable)
+- Response format instructions
+
+c) If parallel batch: spawn all workers together, wait for all.
+
+d) **Log start:**
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/colony state log {project} "task_started" '{"task": "{task-id}", "model": "'"$worker_model"'"}'
+```
 
 ### 5.4: Process Results
 
@@ -301,22 +285,19 @@ inspector_model=$(${CLAUDE_PLUGIN_ROOT}/bin/colony get-model inspector)
 ${CLAUDE_PLUGIN_ROOT}/bin/colony state log {project} "inspection_started" '{"task": "{task-id}", "model": "'"$inspector_model"'"}'
 ```
 
-**Step B: Get diff and requirements for inspector**
+**Step B: Get inspector bundle (TOKEN-OPTIMIZED)**
 
-Before spawning inspector, get the diff and requirements checklist:
+<critical>
+DO NOT read requirements file or run git diff manually.
+Use inspect-bundle to get everything in one call.
+</critical>
 
 ```bash
-# Get diff for files changed by this task
-git diff HEAD -- {files_changed} > /tmp/task_diff.txt
-task_diff=$(cat /tmp/task_diff.txt)
+# Get files from worker response
+files_list=$(echo "{worker_response}" | jq -r '.files | join(",")')
 
-# Get requirements checklist if it exists (for cross-reference)
-requirements_file=".working/colony/{project}/resources/requirements-checklist.md"
-if [[ -f "$requirements_file" ]]; then
-  requirements=$(cat "$requirements_file")
-else
-  requirements="No requirements checklist available."
-fi
+# GET COMPLETE BUNDLE
+inspect_bundle=$(${CLAUDE_PLUGIN_ROOT}/bin/colony inspect-bundle {project} {task-id} --files "$files_list")
 ```
 
 **Step C: Spawn inspector (REQUIRED)**
@@ -326,104 +307,23 @@ Spawn inspector with `subagent_type="colony:inspector"` and model from config:
 ```
 Verify this task was completed correctly.
 
-═══════════════════════════════════════════════════════════
-VERIFICATION REQUEST
-═══════════════════════════════════════════════════════════
+{inspect_bundle}
+```
 
-Task: {task-id}
-Log: .working/colony/{project}/logs/{task-id}_LOG.md
-Task file: .working/colony/{project}/tasks/{task-id}.md
+The bundle includes:
+- Task requirements
+- Diff of changes
+- Requirements checklist
+- Verification instructions
+- Response format
 
-Worker summary: {one-line from worker}
-Files changed: {list}
-
-═══════════════════════════════════════════════════════════
-REQUIREMENTS CHECKLIST (cross-reference for verification)
-═══════════════════════════════════════════════════════════
-
-{requirements}
-
-═══════════════════════════════════════════════════════════
-DIFF OF CHANGES (use this first - avoid re-reading files)
-═══════════════════════════════════════════════════════════
-
-{task_diff}
-
-═══════════════════════════════════════════════════════════
-VERIFICATION PROCESS
-═══════════════════════════════════════════════════════════
-
-**Start with the diff above. Only read full files if you need more context.**
-
-1. **RUN the verification command from task file**
-   - This is the PRIMARY verification
-   - If it's a complex command (starts servers, runs tests, etc.), RUN IT
-   - Do NOT substitute a simpler check
-   - If the command fails, the task FAILS
-
-2. **Run linter on changed files**
-   - e.g., `npx xo {files}` or project lint command
-   - Lint errors = FAIL
-
-3. **Check each acceptance criterion using the diff**
-   - Review the diff to confirm the implementation matches requirements
-   - If criterion says "X works" → Actually test X
-   - If criterion says "returns Y" → Actually call and check response
-   - If criterion says "passes" → Actually run the test
-
-4. **If uncertain, expand context**
-   - If the diff doesn't provide enough context to verify correctness
-   - If you suspect the code may be in the wrong place in the file
-   - If you see something suspicious that needs more investigation
-   - THEN use the Read tool to get the full file
-
-═══════════════════════════════════════════════════════════
-CORE PRINCIPLE: HUMAN IS ADDITION, NOT REPLACEMENT
-═══════════════════════════════════════════════════════════
-
-Milestone checkpoints may pause for human review - that's fine.
-But human review does NOT excuse you from automated verification.
-
-YOU must verify everything that CAN be automated.
-The human is an additional safety net, not a substitute for your work.
-
-═══════════════════════════════════════════════════════════
-AUTOMATIC FAIL CONDITIONS
-═══════════════════════════════════════════════════════════
-
-FAIL immediately if:
-
-1. **Verification substitutes simpler check**
-   - Requirement: "tests pass" → Verification: checks file exists → FAIL
-   - Requirement: "API returns 200" → Verification: checks route exists → FAIL
-   - Requirement: "build succeeds" → Verification: checks config exists → FAIL
-
-2. **Verification claims "manual required" for automatable check**
-   - "Visual test requires manual server start" → FAIL (start the server)
-   - "Needs user to verify in browser" → FAIL (use automation)
-   - "Manual QA step required" → FAIL (automate what can be automated)
-
-3. **Acceptance criteria not actually tested**
-   - Criterion says "X works" but no test of X → FAIL
-   - Criterion says "handles Y" but no Y scenario tested → FAIL
-
-The verification command must EXECUTE what it claims to verify.
-Checking that code exists is NOT the same as running that code.
-
-═══════════════════════════════════════════════════════════
-
-IMPORTANT: Only verify files listed above. Ignore other files that may have been
-created by parallel tasks - they will be verified separately.
-
-AFTER VERIFICATION: Append your findings to the task log file:
-.working/colony/{project}/logs/{task-id}_LOG.md
-
-Include verification results and any learnings (patterns, conventions, gotchas).
-
-Respond:
-{"result": "PASS", "summary": "...", "learnings": ["any patterns or conventions discovered"]}
+The inspector will respond with compact JSON:
+```json
+{"result": "PASS", "summary": "<80 chars"}
+```
 or
-{"result": "FAIL", "issues": [...], "suggestion": "...", "learnings": ["what was learned from the failure"]}
+```json
+{"result": "FAIL", "issues": ["issue1"], "fix": "<action>"}
 ```
 
 **If PASS:** Validate artifacts exist, append learnings, then mark complete:
@@ -578,59 +478,36 @@ ${CLAUDE_PLUGIN_ROOT}/bin/colony state set {project} 'milestones[0].status' '"co
 | `branch` | Create branch, continue | Create branch, ask to continue |
 | `pr` | Log for later, continue | Create PR, pause |
 
-**Non-autonomous mode (default):**
+**Non-autonomous mode (default) - TOKEN-OPTIMIZED:**
 
-First, gather context for the user to review:
+<critical>
+DO NOT gather context manually (git status, git diff, reading logs).
+Spawn a summarizer agent to generate the checkpoint summary.
+This keeps verbose output OUT of orchestrator context.
+</critical>
 
+**Option A: Use CLI summary (simpler)**
 ```bash
-# Get files changed
-git status --porcelain
-
-# Get diff summary
-git diff --stat HEAD
+${CLAUDE_PLUGIN_ROOT}/bin/colony milestone-summary {project} {milestone-id}
 ```
 
-Then present a complete checkpoint summary:
+**Option B: Spawn summarizer agent (richer output)**
+
+Spawn with `subagent_type="colony:summarizer"` and model `haiku`:
 
 ```
-═══════════════════════════════════════════════════════════════
-MILESTONE COMPLETE: M1 - Infrastructure Setup
-═══════════════════════════════════════════════════════════════
+Generate milestone checkpoint summary.
 
-Tasks completed:
-  ✅ T001: {name} - {one-line summary from log}
-  ✅ T002: {name} - {one-line summary from log}
-  ✅ T003: {name} - {one-line summary from log}
+Project: {project}
+Milestone: {milestone-id}
+Working dir: {working_dir}
 
-Files changed:
-  {git diff --stat output, e.g.:}
-  src/kitty-protocol.ts   | 120 ++++++++++++
-  src/parse-keypress.ts   |  45 +++--
-  3 files changed, 165 insertions(+), 12 deletions(-)
-
-How to verify (pick relevant ones):
-  • Web app: Visit http://localhost:3000/{path} - you should see {expected}
-  • API: Run `curl localhost:3000/api/{endpoint}` - expect {response}
-  • CLI: Run `{command}` - should output {expected}
-  • Tests: `npm test` shows {N} passing
-  • Visual: Look for {specific UI element} in {location}
-
-Out of scope (don't worry about):
-  • {Thing that looks broken but isn't part of this milestone}
-  • {Known issue being addressed in later milestone}
-
-Proposed commit (if commit_strategy is phase):
-  feat({scope}): {milestone description}
-
-  - T001: {summary}
-  - T002: {summary}
-  - T003: {summary}
-
-Next milestone: M2 - Core Implementation
-  Ready tasks: T004, T005 (can run in parallel)
-
-═══════════════════════════════════════════════════════════════
+Use: colony milestone-summary {project} {milestone-id}
+Enhance with verification instructions based on task types.
 ```
+
+The summarizer output goes directly to user terminal.
+Orchestrator only needs to know "checkpoint shown, waiting for input".
 
 Use AskUserQuestion with options:
 - "Continue" - Proceed to next milestone (same context, faster)

@@ -117,24 +117,25 @@ Watch for these red flags:
 
 ## Response Format
 
-Keep MINIMAL. Append details to log file.
+<critical>
+ULTRA-COMPACT RESPONSES ONLY.
+All details go in log file - orchestrator context is precious.
+</critical>
 
 ### PASS
 ```json
-{
-  "result": "PASS",
-  "summary": "{one-line verification summary}"
-}
+{"result": "PASS", "summary": "<80 chars max"}
 ```
 
 ### FAIL
 ```json
-{
-  "result": "FAIL",
-  "issues": ["{specific issue 1}", "{specific issue 2}"],
-  "suggestion": "{actionable fix}"
-}
+{"result": "FAIL", "issues": ["<50 chars each"], "fix": "<action>"}
 ```
+
+**DO NOT include:**
+- `learnings` in response (put in log file)
+- Verbose explanations (put in log)
+- Multiple sentences in summary
 
 ## Append to Log
 

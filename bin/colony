@@ -958,6 +958,458 @@ is_complete() {
   echo "$result"
 }
 
+# === TOKEN-OPTIMIZED COMMANDS ===
+
+# Get minimal loop state (replaces multiple queries per iteration)
+loop_state() {
+  if [[ $# -lt 1 ]]; then
+    echo "Usage: colony loop-state <project> [max_ready]" >&2
+    exit 1
+  fi
+
+  local project="$1"
+  local max_ready="${2:-5}"
+  local state_file
+  state_file=$(get_state_file "$project")
+
+  if [[ ! -f "$state_file" ]]; then
+    echo -e "${RED}No state file for project: $project${NC}" >&2
+    exit 1
+  fi
+
+  local current_milestone
+  current_milestone=$(milestone_current "$project")
+
+  jq -r --arg milestone "$current_milestone" --argjson max "$max_ready" '
+    . as $root |
+
+    # Count tasks by status
+    {
+      counts: {
+        pending: [.tasks | to_entries[] | select(.value.status == "pending")] | length,
+        running: [.tasks | to_entries[] | select(.value.status == "running")] | length,
+        complete: [.tasks | to_entries[] | select(.value.status == "complete")] | length,
+        failed: [.tasks | to_entries[] | select(.value.status == "failed")] | length,
+        blocked: [.tasks | to_entries[] | select(.value.status == "blocked")] | length
+      },
+
+      # Current milestone info
+      milestone: (
+        if $milestone == "COMPLETE" then
+          {id: "COMPLETE", name: "All Done", complete: true}
+        else
+          (.milestones[] | select(.id == $milestone)) as $m |
+          {
+            id: $m.id,
+            name: $m.name,
+            tasks_done: ([$m.tasks[] | select($root.tasks[.].status == "complete")] | length),
+            tasks_total: ($m.tasks | length),
+            complete: false
+          }
+        end
+      ),
+
+      # Ready tasks (pending with deps met, in current milestone)
+      ready: (
+        if $milestone == "COMPLETE" then []
+        else
+          (.milestones[] | select(.id == $milestone) | .tasks // []) as $milestone_tasks |
+          [.tasks | to_entries[] |
+            select(.key | IN($milestone_tasks[])) |
+            select(.value.status == "pending") |
+            select(
+              (.value.depends_on // []) as $deps |
+              ($deps | length == 0) or
+              ([$deps[] | . as $d | $root.tasks[$d].status == "complete"] | all)
+            ) |
+            .key
+          ] | .[:$max]
+        end
+      ),
+
+      # Stuck tasks (running > 30 min)
+      stuck: [
+        .tasks | to_entries[] |
+        select(.value.status == "running") |
+        select(.value.started_at != null) |
+        select(
+          (.value.started_at | fromdateiso8601) < (now - 1800)
+        ) |
+        .key
+      ],
+
+      # Rule echo trigger (every 3 completed tasks)
+      rule_echo: ((.counts.complete % 3) == 0 and .counts.complete > 0)
+    }
+  ' "$state_file" 2>/dev/null || jq -r --arg milestone "$current_milestone" --argjson max "$max_ready" '
+    # Fallback without date comparison (for systems without fromdateiso8601)
+    . as $root |
+    {
+      counts: {
+        pending: [.tasks | to_entries[] | select(.value.status == "pending")] | length,
+        running: [.tasks | to_entries[] | select(.value.status == "running")] | length,
+        complete: [.tasks | to_entries[] | select(.value.status == "complete")] | length,
+        failed: [.tasks | to_entries[] | select(.value.status == "failed")] | length,
+        blocked: [.tasks | to_entries[] | select(.value.status == "blocked")] | length
+      },
+      milestone: (
+        if $milestone == "COMPLETE" then
+          {id: "COMPLETE", name: "All Done", complete: true}
+        else
+          (.milestones[] | select(.id == $milestone)) as $m |
+          {
+            id: $m.id,
+            name: $m.name,
+            tasks_done: ([$m.tasks[] | select($root.tasks[.].status == "complete")] | length),
+            tasks_total: ($m.tasks | length),
+            complete: false
+          }
+        end
+      ),
+      ready: (
+        if $milestone == "COMPLETE" then []
+        else
+          (.milestones[] | select(.id == $milestone) | .tasks // []) as $milestone_tasks |
+          [.tasks | to_entries[] |
+            select(.key | IN($milestone_tasks[])) |
+            select(.value.status == "pending") |
+            select(
+              (.value.depends_on // []) as $deps |
+              ($deps | length == 0) or
+              ([$deps[] | . as $d | $root.tasks[$d].status == "complete"] | all)
+            ) |
+            .key
+          ] | .[:$max]
+        end
+      ),
+      stuck: [.tasks | to_entries[] | select(.value.status == "running") | .key],
+      rule_echo: false
+    }
+  ' "$state_file"
+}
+
+# Get minimal initialization state (replaces full state dump)
+init_overview() {
+  if [[ $# -lt 1 ]]; then
+    echo "Usage: colony init-overview <project>" >&2
+    exit 1
+  fi
+
+  local project="$1"
+  local state_file
+  state_file=$(get_state_file "$project")
+  local working_dir
+  working_dir=$(get_working_dir)
+
+  if [[ ! -f "$state_file" ]]; then
+    echo -e "${RED}No state file for project: $project${NC}" >&2
+    exit 1
+  fi
+
+  jq -r --arg wd "$working_dir" --arg proj "$project" '
+    {
+      project: .project_name,
+      total_tasks: .total_tasks,
+      milestones: (.milestones | length),
+      git: {
+        strategy: .git.strategy,
+        branch: .git.branch
+      },
+      concurrency: .concurrency,
+      autonomous: .autonomous_mode,
+      context_path: "\($wd)/colony/\($proj)/context.md",
+      counts: {
+        pending: [.tasks | to_entries[] | select(.value.status == "pending")] | length,
+        complete: [.tasks | to_entries[] | select(.value.status == "complete")] | length,
+        running: [.tasks | to_entries[] | select(.value.status == "running")] | length
+      }
+    }
+  ' "$state_file"
+}
+
+# Bundle everything needed for a worker (orchestrator passes through without reading)
+task_bundle() {
+  if [[ $# -lt 2 ]]; then
+    echo "Usage: colony task-bundle <project> <task-id>" >&2
+    exit 1
+  fi
+
+  local project="$1"
+  local task_id="$2"
+  local working_dir
+  working_dir=$(get_working_dir)
+  local state_file
+  state_file=$(get_state_file "$project")
+  local project_dir="${working_dir}/colony/${project}"
+  local task_file="${project_dir}/tasks/${task_id}.md"
+  local context_file="${project_dir}/context.md"
+  local learnings_file="${project_dir}/LEARNINGS.md"
+  local log_file="${project_dir}/logs/${task_id}_LOG.md"
+
+  if [[ ! -f "$state_file" ]]; then
+    echo -e "${RED}No state file for project: $project${NC}" >&2
+    exit 1
+  fi
+
+  if [[ ! -f "$task_file" ]]; then
+    echo -e "${RED}Task file not found: $task_file${NC}" >&2
+    exit 1
+  fi
+
+  # Get task info from state
+  local attempts
+  attempts=$(jq -r ".tasks.\"$task_id\".attempts // 0" "$state_file")
+  local last_error
+  last_error=$(jq -r ".tasks.\"$task_id\".last_error // \"\"" "$state_file")
+
+  # Get task content
+  local task_content
+  task_content=$(cat "$task_file")
+
+  # Get context summary (first 50 lines or key sections)
+  local context_summary=""
+  if [[ -f "$context_file" ]]; then
+    context_summary=$(head -80 "$context_file")
+  fi
+
+  # Get learnings (last 20 entries)
+  local learnings=""
+  if [[ -f "$learnings_file" ]]; then
+    learnings=$(tail -30 "$learnings_file")
+  fi
+
+  # Get git history
+  local git_history=""
+  git_history=$(git log --oneline -10 2>/dev/null || echo "No git history")
+
+  # Previous attempt info if retry
+  local retry_info=""
+  if [[ "$attempts" -gt 0 ]]; then
+    retry_info="
+---
+## RETRY CONTEXT (Attempt $((attempts + 1)))
+Previous attempts: $attempts
+Last error: ${last_error:-None recorded}
+
+FIX THE UNDERLYING ISSUE. Do not retry the same approach.
+---"
+  fi
+
+  # Output bundle
+  cat << BUNDLE
+TASK: ${task_id}
+ATTEMPT: $((attempts + 1)) of 3
+LOG_PATH: ${log_file}
+${retry_info}
+═══════════════════════════════════════════════════════════
+
+## Task Definition
+
+${task_content}
+
+═══════════════════════════════════════════════════════════
+
+## Project Context (key sections)
+
+${context_summary}
+
+═══════════════════════════════════════════════════════════
+
+## Recent Git History
+
+${git_history}
+
+═══════════════════════════════════════════════════════════
+
+## Project Learnings
+
+${learnings:-No learnings yet.}
+
+═══════════════════════════════════════════════════════════
+
+IMPORTANT: Write your work log to LOG_PATH using the Write tool.
+Include: what you did, files changed, patterns discovered.
+
+Respond with compact JSON:
+{"status": "DONE|PARTIAL|STUCK", "summary": "<80 chars", "files": ["file1.ts"], "learnings": ["<50 chars"]}
+
+Details go in log file, NOT in response.
+BUNDLE
+}
+
+# Bundle everything needed for an inspector
+inspect_bundle() {
+  if [[ $# -lt 2 ]]; then
+    echo "Usage: colony inspect-bundle <project> <task-id> [--files file1,file2]" >&2
+    exit 1
+  fi
+
+  local project="$1"
+  local task_id="$2"
+  shift 2
+
+  local files=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --files)
+        files="$2"
+        shift 2
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
+
+  local working_dir
+  working_dir=$(get_working_dir)
+  local project_dir="${working_dir}/colony/${project}"
+  local task_file="${project_dir}/tasks/${task_id}.md"
+  local log_file="${project_dir}/logs/${task_id}_LOG.md"
+  local requirements_file="${project_dir}/resources/requirements-checklist.md"
+
+  if [[ ! -f "$task_file" ]]; then
+    echo -e "${RED}Task file not found: $task_file${NC}" >&2
+    exit 1
+  fi
+
+  # Get task content (just acceptance criteria section if possible)
+  local task_content
+  task_content=$(cat "$task_file")
+
+  # Get diff if files specified
+  local diff_content=""
+  if [[ -n "$files" ]]; then
+    local file_list
+    file_list=$(echo "$files" | tr ',' ' ')
+    diff_content=$(git diff HEAD -- $file_list 2>/dev/null | head -300 || echo "No diff available")
+  fi
+
+  # Get requirements summary (just headers/checkboxes)
+  local requirements=""
+  if [[ -f "$requirements_file" ]]; then
+    requirements=$(grep -E '^\s*[-*]\s*\[' "$requirements_file" | head -30 || head -30 "$requirements_file")
+  fi
+
+  # Output bundle
+  cat << BUNDLE
+VERIFICATION: ${task_id}
+LOG_PATH: ${log_file}
+TASK_FILE: ${task_file}
+
+═══════════════════════════════════════════════════════════
+
+## Task Requirements
+
+${task_content}
+
+═══════════════════════════════════════════════════════════
+
+## Diff of Changes
+
+${diff_content:-No files specified or no changes detected}
+
+═══════════════════════════════════════════════════════════
+
+## Requirements Checklist
+
+${requirements:-No requirements checklist available}
+
+═══════════════════════════════════════════════════════════
+
+## Verification Process
+
+1. RUN the verification command from task file (PRIMARY check)
+2. Run linter on changed files
+3. Check each criterion against the diff
+4. If uncertain, use Read tool for full context
+
+Append findings to LOG_PATH.
+
+Respond with compact JSON:
+{"result": "PASS|FAIL", "summary": "<80 chars"}
+or if FAIL:
+{"result": "FAIL", "issues": ["issue1"], "fix": "<action>"}
+
+Details go in log file, NOT in response.
+BUNDLE
+}
+
+# Generate milestone summary (for summarizer agent or direct use)
+milestone_summary() {
+  if [[ $# -lt 2 ]]; then
+    echo "Usage: colony milestone-summary <project> <milestone-id>" >&2
+    exit 1
+  fi
+
+  local project="$1"
+  local milestone_id="$2"
+  local working_dir
+  working_dir=$(get_working_dir)
+  local state_file
+  state_file=$(get_state_file "$project")
+  local project_dir="${working_dir}/colony/${project}"
+
+  if [[ ! -f "$state_file" ]]; then
+    echo -e "${RED}No state file for project: $project${NC}" >&2
+    exit 1
+  fi
+
+  # Get milestone info
+  local milestone_name
+  milestone_name=$(jq -r --arg id "$milestone_id" '.milestones[] | select(.id == $id) | .name' "$state_file")
+  local milestone_tasks
+  milestone_tasks=$(jq -r --arg id "$milestone_id" '.milestones[] | select(.id == $id) | .tasks | join(" ")' "$state_file")
+
+  # Get task summaries from logs
+  local task_summaries=""
+  for tid in $milestone_tasks; do
+    local log_file="${project_dir}/logs/${tid}_LOG.md"
+    local status
+    status=$(jq -r ".tasks.\"$tid\".status" "$state_file")
+    local summary="(no log)"
+    if [[ -f "$log_file" ]]; then
+      summary=$(grep -m1 "^##\|Result:\|summary" "$log_file" 2>/dev/null | head -1 || echo "(see log)")
+    fi
+    if [[ "$status" == "complete" ]]; then
+      task_summaries="${task_summaries}  ✅ ${tid}: ${summary}\n"
+    else
+      task_summaries="${task_summaries}  ⚠️ ${tid}: ${status}\n"
+    fi
+  done
+
+  # Get git stats
+  local git_stats
+  git_stats=$(git diff --stat HEAD 2>/dev/null | tail -5 || echo "No git changes")
+
+  # Get next milestone
+  local next_milestone
+  next_milestone=$(jq -r --arg id "$milestone_id" '
+    .milestones as $ms |
+    ($ms | to_entries | map(select(.value.id == $id)) | .[0].key) as $idx |
+    if $idx == null then "UNKNOWN"
+    elif ($idx + 1) >= ($ms | length) then "COMPLETE"
+    else $ms[$idx + 1].id + " - " + $ms[$idx + 1].name
+    end
+  ' "$state_file")
+
+  cat << SUMMARY
+═══════════════════════════════════════════════════════════════
+MILESTONE COMPLETE: ${milestone_id} - ${milestone_name}
+═══════════════════════════════════════════════════════════════
+
+Tasks completed:
+$(echo -e "$task_summaries")
+
+Files changed:
+${git_stats}
+
+Next milestone: ${next_milestone}
+
+═══════════════════════════════════════════════════════════════
+SUMMARY
+}
+
 # Print help
 print_help() {
   cat << 'EOF'
@@ -992,6 +1444,13 @@ Milestone Commands:
   milestone advance <project>     Mark current milestone complete, move to next
   milestone tasks <project>       Get task IDs in current milestone
 
+Token-Optimized Commands (for orchestrator efficiency):
+  loop-state <project> [max]              Minimal state for each loop iteration
+  init-overview <project>                 Minimal state for initialization
+  task-bundle <project> <task-id>         Complete worker prompt bundle
+  inspect-bundle <project> <id> [--files] Complete inspector prompt bundle
+  milestone-summary <project> <milestone> Formatted milestone completion summary
+
 Other Commands:
   get-model <role>         Get model for role (orchestrator|worker|inspector)
   next-batch <project>     Get next batch of ready tasks (space-separated)
@@ -1006,6 +1465,11 @@ Examples:
   colony state task-start my-project T001
   colony state task-complete my-project T001
   colony state summary my-project
+
+  # Token-optimized workflow
+  colony loop-state my-project           # Get minimal loop state
+  colony task-bundle my-project T001     # Get worker prompt bundle
+  colony inspect-bundle my-project T001 --files "a.ts,b.ts"
 
 Config file: ~/.colony/config.json
 EOF
@@ -1053,6 +1517,12 @@ case "${1:-help}" in
   next-batch) shift; next_batch "$@" ;;
   is-complete) shift; is_complete "$@" ;;
   working-dir) print_working_dir ;;
+  # Token-optimized commands
+  loop-state) shift; loop_state "$@" ;;
+  init-overview) shift; init_overview "$@" ;;
+  task-bundle) shift; task_bundle "$@" ;;
+  inspect-bundle) shift; inspect_bundle "$@" ;;
+  milestone-summary) shift; milestone_summary "$@" ;;
   help|--help|-h) print_help ;;
   *) echo "Unknown command: $1. Use 'colony help' for usage." >&2; exit 1 ;;
 esac
